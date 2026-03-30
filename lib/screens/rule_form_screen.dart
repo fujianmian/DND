@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/rule.dart';
 import 'package:drift/drift.dart';
 import '../database/database.dart';
+import '../main.dart'; // To access the global 'database'
 
 class RuleFormScreen extends StatefulWidget {
   const RuleFormScreen({super.key});
@@ -16,13 +17,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   TriggerType _selectedType = TriggerType.time;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
-  late final AppDatabase database;
-
-  @override
-  void initState() {
-    super.initState();
-    database = AppDatabase();
-  }
 
   @override
   Widget build(BuildContext context) {
