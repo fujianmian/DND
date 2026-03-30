@@ -32,11 +32,17 @@ class AppDatabase extends _$AppDatabase {
   int get schemaVersion => 1;
 
   // Simple Queries for MVP
-  Future<List<Rule>> getAllRules() => select(rules).get();
-  Stream<List<Rule>> watchAllRules() => select(rules).watch(); // Reactive!
-  Future<int> addRule(RulesCompanion entry) => into(rules).insert(entry);
-  Future updateRule(Rule rule) => update(rules).replace(rule);
-  Future deleteRule(Rule rule) => delete(rules).delete(rule);
+  // 1. CREATE: Insert a new rule
+  Future<int> insertRule(RulesCompanion rule) => into(rules).insert(rule);
+
+  // 2. READ: Watch rules (returns a Stream for reactive UI updates)
+  Stream<List<Rule>> watchAllRules() => select(rules).watch();
+
+  // 3. UPDATE: Toggle enable/disable or edit rule
+  Future<bool> updateRule(Rule rule) => update(rules).replace(rule);
+
+  // 4. DELETE: Remove a rule
+  Future<int> deleteRule(Rule rule) => delete(rules).delete(rule);
 }
 
 LazyDatabase _openConnection() {

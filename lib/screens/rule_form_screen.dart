@@ -104,7 +104,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                     endTime: Value(_endTime?.format(context)),
                   );
 
-                  await database.addRule(newEntry);
+                  await database.insertRule(newEntry);
 
                   if (mounted) {
                     // 3. Guarding the context across async gaps
