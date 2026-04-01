@@ -132,6 +132,20 @@ class _RuleListScreenState extends State<RuleListScreen> {
             ),
           ),
 
+          ElevatedButton(
+            onPressed: () async {
+              await DndService().startForegroundService(22, 7);
+            },
+            child: Text("Start Background Automation"),
+          ),
+
+          ElevatedButton(
+            onPressed: () async {
+              await DndService().stopForegroundService();
+            },
+            child: Text("Stop Background Automation"),
+          ),
+
           // --- ENHANCED RULE LIST ---
           Expanded(
             child: StreamBuilder<List<Rule>>(

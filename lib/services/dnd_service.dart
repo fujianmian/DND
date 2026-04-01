@@ -41,4 +41,27 @@ class DndService {
       print("Failed to open settings: '${e.message}'.");
     }
   }
+
+  Future<void> startForegroundService(int startHour, int endHour) async {
+    try {
+      // Pass the time parameters as a Map payload
+      await platform.invokeMethod('startService', {
+        'startHour': startHour,
+        'endHour': endHour,
+      });
+      print('DND Foreground Service started successfully.');
+    } on PlatformException catch (e) {
+      print("Failed to start foreground service: '${e.message}'.");
+    }
+  }
+
+  /// Stops the native Android Foreground Service.
+  Future<void> stopForegroundService() async {
+    try {
+      await platform.invokeMethod('stopService');
+      print('DND Foreground Service stopped successfully.');
+    } on PlatformException catch (e) {
+      print("Failed to stop foreground service: '${e.message}'.");
+    }
+  }
 }
