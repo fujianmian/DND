@@ -47,17 +47,20 @@ class MainActivity: FlutterActivity() {
                 // --- NEW CODE: FOREGROUND SERVICE CONTROLS ---
                 
                 "startService" -> {
-                    // 1. Extract arguments sent from Flutter (default to 22:00-07:00 if null)
+                    // Extract hour and minute arguments
                     val startHour = call.argument<Int>("startHour") ?: 22
+                    val startMinute = call.argument<Int>("startMinute") ?: 0
                     val endHour = call.argument<Int>("endHour") ?: 7
+                    val endMinute = call.argument<Int>("endMinute") ?: 0
 
-                    // 2. Create Intent and pass the arguments to our DndForegroundService
+                    // Pass the arguments to DndForegroundService
                     val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
                         putExtra("startHour", startHour)
+                        putExtra("startMinute", startMinute)
                         putExtra("endHour", endHour)
+                        putExtra("endMinute", endMinute)
                     }
 
-                    // 3. Start the service safely (Required for Android 8/Oreo and above)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         startForegroundService(serviceIntent)
                     } else {

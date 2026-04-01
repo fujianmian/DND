@@ -42,14 +42,23 @@ class DndService {
     }
   }
 
-  Future<void> startForegroundService(int startHour, int endHour) async {
+  Future<void> startForegroundService(
+    int startHour,
+    int startMinute,
+    int endHour,
+    int endMinute,
+  ) async {
     try {
       // Pass the time parameters as a Map payload
       await platform.invokeMethod('startService', {
         'startHour': startHour,
+        'startMinute': startMinute, // <-- Added
         'endHour': endHour,
+        'endMinute': endMinute, // <-- Added
       });
-      print('DND Foreground Service started successfully.');
+      print(
+        'DND Foreground Service started successfully for $startHour:$startMinute to $endHour:$endMinute.',
+      );
     } on PlatformException catch (e) {
       print("Failed to start foreground service: '${e.message}'.");
     }

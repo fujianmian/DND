@@ -22,8 +22,8 @@ class AutomationManager {
   bool? _isDndCurrentlyEnabled = false;
 
   void start() {
-    // Check every 60 seconds
-    _timer = Timer.periodic(const Duration(seconds: 60), (timer) {
+    // Check every 30 seconds
+    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _checkRulesAndToggleDnd();
     });
 

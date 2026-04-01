@@ -18,9 +18,11 @@ class DndForegroundService : Service() {
     private val CHANNEL_ID = "DndServiceChannel"
     private var timer: Timer? = null
 
-    // Default FYP values (we will pass actual values from Flutter later)
+    // Default FYP values updated to include minutes
     private var startHour = 22 // 10 PM
+    private var startMinute = 0
     private var endHour = 7    // 7 AM
+    private var endMinute = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -28,15 +30,21 @@ class DndForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // 1. Receive the target times from Flutter via Intent
+        // 1. Receive the target times from Flutter via Intent (Now includes minutes)
         startHour = intent?.getIntExtra("startHour", 22) ?: 22
+        startMinute = intent?.getIntExtra("startMinute", 0) ?: 0
         endHour = intent?.getIntExtra("endHour", 7) ?: 7
+        endMinute = intent?.getIntExtra("endMinute", 0) ?: 0
+
+        // Format times nicely for the notification (e.g., 07:05)
+        val startTimeStr = String.format("%02d:%02d", startHour, startMinute)
+        val endTimeStr = String.format("%02d:%02d", endHour, endMinute)
 
         // 2. Create the sticky Foreground Notification
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("DND Automation Active")
-            .setContentText("Automatically managing DND from $startHour:00 to $endHour:00")
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // Default Android icon
+            .setContentText("Automatically managing DND from $startTimeStr to $endTimeStr")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
 
@@ -50,15 +58,13 @@ class DndForegroundService : Service() {
         // 4. Start the checking loop
         startAutomationLoop()
 
-        // Restart service automatically if the system kills it to save memory
         return START_STICKY 
     }
 
     private fun startAutomationLoop() {
-        timer?.cancel() // Cancel any existing timer
+        timer?.cancel()
         timer = Timer()
 
-        // Run this check every 1 minute (60,000 milliseconds)
         timer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 checkAndToggleDnd()
@@ -69,20 +75,29 @@ class DndForegroundService : Service() {
     private fun checkAndToggleDnd() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Safety check: Make sure the user actually granted DND permission
         if (!notificationManager.isNotificationPolicyAccessGranted) {
             return
         }
 
-        // Get the current hour of the day (0-23)
-        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        // Get the current hour and minute
+        val calendar = Calendar.getInstance()
+        val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
+        val currentMinute = calendar.get(Calendar.MINUTE)
 
-        // Simple time logic
-        val isDndTime = if (startHour < endHour) {
-            currentHour in startHour until endHour
+        // Calculate total minutes for precise comparison
+        val currentTotal = (currentHour * 60) + currentMinute
+        val startTotal = (startHour * 60) + startMinute
+        val endTotal = (endHour * 60) + endMinute
+
+        // Minute-level time logic
+        val isDndTime = if (startTotal < endTotal) {
+            // Normal daytime schedule (e.g., 14:30 to 14:45)
+            currentTotal in startTotal until endTotal
+        } else if (startTotal > endTotal) {
+            // Overnight schedule (e.g., 22:30 to 07:15)
+            currentTotal >= startTotal || currentTotal < endTotal
         } else {
-            // Handles overnight times (e.g., 22 PM to 7 AM)
-            currentHour >= startHour || currentHour < endHour
+            false // Fallback if start and end are exactly the exact same minute
         }
 
         val currentFilter = notificationManager.currentInterruptionFilter
@@ -93,22 +108,20 @@ class DndForegroundService : Service() {
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
             }
         } 
-        // Turn off DND if it's NOT time AND it is currently on
+        // Turn off DND if it's NOT time (Safely checking != ALL so it forces it off properly)
         else {
-            if (currentFilter == NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
+            if (currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
             }
         }
     }
 
     override fun onDestroy() {
-        // Stop the timer when the service is destroyed
         timer?.cancel()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
-        // We return null because this is a "Started Service", not a "Bound Service"
         return null
     }
 
@@ -117,7 +130,7 @@ class DndForegroundService : Service() {
             val serviceChannel = NotificationChannel(
                 CHANNEL_ID,
                 "DND Automation Service",
-                NotificationManager.IMPORTANCE_LOW // Low importance so it doesn't vibrate constantly
+                NotificationManager.IMPORTANCE_LOW 
             )
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(serviceChannel)
