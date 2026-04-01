@@ -1,3 +1,4 @@
+// lib/screens/rule_list_screen.dart
 import 'package:flutter/material.dart';
 import 'rule_form_screen.dart';
 import '../database/database.dart';
@@ -12,69 +13,122 @@ class RuleListScreen extends StatefulWidget {
 }
 
 class _RuleListScreenState extends State<RuleListScreen> {
-  // Helper to show the delete confirmation dialog
   void _showDeleteDialog(Rule rule) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Rule?"),
-        content: Text("Are you sure you want to remove '${rule.name}'?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+        return AlertDialog(
+          backgroundColor: colorScheme.surface,
+          title: Text(
+            "Delete Rule?",
+            style: TextStyle(color: colorScheme.primary),
           ),
-          TextButton(
-            onPressed: () async {
-              await database.deleteRule(rule);
-              if (mounted) Navigator.pop(context);
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          content: Text(
+            "Are you sure you want to remove '${rule.name}'?",
+            style: TextStyle(color: colorScheme.secondary),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                "Cancel",
+                style: TextStyle(color: colorScheme.secondary),
+              ),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await database.deleteRule(rule);
+                if (mounted) Navigator.pop(context);
+              },
+              // ✅ LIGHT background means we force DARK text
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+              ),
+              child: const Text("Delete"),
+            ),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('DND Automation')),
+      appBar: AppBar(
+        title: const Text(
+          'My Automations',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
       body: Column(
         children: [
-          // --- TEST PANEL (Kept for MVP) ---
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.deepPurple.withOpacity(0.1),
-            child: Column(
-              children: [
-                const Text(
-                  "Native DND Test Panel",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => DndService.enableDnd(),
-                      icon: const Icon(Icons.do_not_disturb_on),
-                      label: const Text("Enable"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade100,
+          // --- STATUS & TEST PANEL ---
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colorScheme.surface, // Dark background
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.toggle_on,
+                        color: colorScheme.primary,
+                      ), // Light icon on dark background
+                      const SizedBox(width: 8),
+                      Text(
+                        "Manual Override",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: colorScheme
+                              .primary, // Light text on dark background
+                        ),
                       ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => DndService.disableDnd(),
-                      icon: const Icon(Icons.do_not_disturb_off),
-                      label: const Text("Disable"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade100,
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => DndService.enableDnd(),
+                          icon: const Icon(Icons.do_not_disturb_on, size: 18),
+                          label: const Text("Enable"),
+                          // ✅ LIGHT background means we force DARK text/icon
+                          style: FilledButton.styleFrom(
+                            backgroundColor: colorScheme.primary,
+                            foregroundColor: colorScheme.onPrimary,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => DndService.disableDnd(),
+                          icon: const Icon(Icons.do_not_disturb_off, size: 18),
+                          label: const Text("Disable"),
+                          // Outlined button uses dark background, so text is secondary
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: colorScheme.secondary,
+                            side: BorderSide(color: colorScheme.secondary),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -86,82 +140,130 @@ class _RuleListScreenState extends State<RuleListScreen> {
                 final rules = snapshot.data ?? [];
 
                 if (rules.isEmpty) {
-                  return const Center(child: Text('No rules yet.'));
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.rule_folder_outlined,
+                          size: 64,
+                          color: colorScheme.secondary,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No rules configured yet.',
+                          style: TextStyle(
+                            color: colorScheme.secondary,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
                 }
 
                 return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 80),
                   itemCount: rules.length,
                   itemBuilder: (context, index) {
                     final rule = rules[index];
+                    final isTimeRule = rule.type == 0;
+
                     return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      child: ListTile(
-                        // 1. TAP TO EDIT
+                      // Uses the dark Surface color from global theme
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => RuleFormScreen(rule: rule),
                           ),
                         ),
-                        title: Text(
-                          rule.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              rule.type == 0
-                                  ? "🕒 Time Rule"
-                                  : "📍 Location Rule",
-                            ),
-                            if (rule.type == 0 &&
-                                rule.startTime != null &&
-                                rule.endTime != null)
-                              Text(
-                                "${rule.startTime} - ${rule.endTime}",
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Row(
+                            children: [
+                              // ICON CONTAINER
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color:
+                                      colorScheme.primary, // ✅ Light Background
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  isTimeRule
+                                      ? Icons.access_time_filled
+                                      : Icons.location_on,
+                                  color: colorScheme.onPrimary, // ✅ Dark Icon
+                                  size: 28,
                                 ),
                               ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // 2. TOGGLE SWITCH
-                            Switch(
-                              value: rule.isEnabled,
-                              onChanged: (val) async {
-                                bool hasPermission =
-                                    await DndService.isPermissionGranted();
-                                if (!hasPermission) {
-                                  await DndService.openDndSettings();
-                                  return;
-                                }
-                                database.updateRule(
-                                  rule.copyWith(isEnabled: val),
-                                );
-                                if (val) {
-                                  await DndService.enableDnd();
-                                } else {
-                                  await DndService.disableDnd();
-                                }
-                              },
-                            ),
-                            // 3. DELETE BUTTON
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.redAccent,
+                              const SizedBox(width: 16),
+
+                              // TEXT INFO
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      rule.name,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: colorScheme
+                                            .primary, // Light text on dark card
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      isTimeRule
+                                          ? "${rule.startTime ?? '--:--'} to ${rule.endTime ?? '--:--'}"
+                                          : "Location-based rule",
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: colorScheme
+                                            .secondary, // Secondary grey text
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              onPressed: () => _showDeleteDialog(rule),
-                            ),
-                          ],
+
+                              // ACTIONS
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Switch(
+                                    value: rule.isEnabled,
+                                    onChanged: (val) async {
+                                      bool hasPermission =
+                                          await DndService.isPermissionGranted();
+                                      if (!hasPermission) {
+                                        await DndService.openDndSettings();
+                                        return;
+                                      }
+                                      database.updateRule(
+                                        rule.copyWith(isEnabled: val),
+                                      );
+                                      if (val) {
+                                        await DndService.enableDnd();
+                                      } else {
+                                        await DndService.disableDnd();
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline),
+                                    color: colorScheme
+                                        .secondary, // Secondary grey icon
+                                    onPressed: () => _showDeleteDialog(rule),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -172,12 +274,16 @@ class _RuleListScreenState extends State<RuleListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      // FAB automatically uses Accent (Light) background with Dark icon based on our main.dart theme, but we can explicitly set it here to be safe
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const RuleFormScreen()),
         ),
-        child: const Icon(Icons.add),
+        backgroundColor: colorScheme.primary, // Light Accent
+        foregroundColor: colorScheme.onPrimary, // Dark Text/Icon
+        icon: const Icon(Icons.add),
+        label: const Text("New Rule"),
       ),
     );
   }
