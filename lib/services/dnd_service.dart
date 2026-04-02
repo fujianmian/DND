@@ -42,35 +42,23 @@ class DndService {
     }
   }
 
-  Future<void> startForegroundService(
-    int startHour,
-    int startMinute,
-    int endHour,
-    int endMinute,
-  ) async {
+  // Pass the formatted list of maps to Kotlin
+  Future<void> startForegroundService(List<Map<String, int>> rulesList) async {
     try {
-      // Pass the time parameters as a Map payload
-      await platform.invokeMethod('startService', {
-        'startHour': startHour,
-        'startMinute': startMinute, // <-- Added
-        'endHour': endHour,
-        'endMinute': endMinute, // <-- Added
-      });
-      print(
-        'DND Foreground Service started successfully for $startHour:$startMinute to $endHour:$endMinute.',
-      );
+      await platform.invokeMethod('startService', {'rules': rulesList});
+      print('DND Foreground Service started with ${rulesList.length} rules.');
     } on PlatformException catch (e) {
       print("Failed to start foreground service: '${e.message}'.");
     }
   }
 
-  /// Stops the native Android Foreground Service.
-  Future<void> stopForegroundService() async {
+  // Call this whenever a rule is added/edited/deleted to update the running service
+  Future<void> updateForegroundRules(List<Map<String, int>> rulesList) async {
     try {
-      await platform.invokeMethod('stopService');
-      print('DND Foreground Service stopped successfully.');
+      await platform.invokeMethod('updateRules', {'rules': rulesList});
+      print('DND Foreground Service rules updated dynamically.');
     } on PlatformException catch (e) {
-      print("Failed to stop foreground service: '${e.message}'.");
+      print("Failed to update foreground service: '${e.message}'.");
     }
   }
 }

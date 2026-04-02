@@ -28,7 +28,6 @@ class MainActivity: FlutterActivity() {
                 }
                 "enableDnd" -> {
                     if (notificationManager.isNotificationPolicyAccessGranted) {
-                        // Updated to PRIORITY based on your latest adjustment
                         notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
                         result.success(null)
                     } else {
@@ -44,26 +43,30 @@ class MainActivity: FlutterActivity() {
                     }
                 }
                 
-                // --- NEW CODE: FOREGROUND SERVICE CONTROLS ---
+                // --- FOREGROUND SERVICE CONTROLS ---
                 
-                "startService" -> {
-                    // Extract hour and minute arguments
-                    val startHour = call.argument<Int>("startHour") ?: 22
-                    val startMinute = call.argument<Int>("startMinute") ?: 0
-                    val endHour = call.argument<Int>("endHour") ?: 7
-                    val endMinute = call.argument<Int>("endMinute") ?: 0
+                "startService", "updateRules" -> {
+                    // Extract the list of rules mapped in Flutter
+                    val rulesList = call.argument<List<Map<String, Int>>>("rules") ?: emptyList()
+                    
+                    // Break down maps into arrays for safe Intent passing
+                    val startHours = rulesList.map { it["startHour"] ?: 0 }.toIntArray()
+                    val startMinutes = rulesList.map { it["startMinute"] ?: 0 }.toIntArray()
+                    val endHours = rulesList.map { it["endHour"] ?: 0 }.toIntArray()
+                    val endMinutes = rulesList.map { it["endMinute"] ?: 0 }.toIntArray()
 
-                    // Pass the arguments to DndForegroundService
                     val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
-                        putExtra("startHour", startHour)
-                        putExtra("startMinute", startMinute)
-                        putExtra("endHour", endHour)
-                        putExtra("endMinute", endMinute)
+                        putExtra("startHours", startHours)
+                        putExtra("startMinutes", startMinutes)
+                        putExtra("endHours", endHours)
+                        putExtra("endMinutes", endMinutes)
                     }
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && call.method == "startService") {
                         startForegroundService(serviceIntent)
                     } else {
+                        // Using startService on an existing Foreground Service acts as an update
+                        // triggering onStartCommand again without tearing it down
                         startService(serviceIntent)
                     }
                     result.success(null)

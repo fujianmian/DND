@@ -13,6 +13,46 @@ class RuleListScreen extends StatefulWidget {
 }
 
 class _RuleListScreenState extends State<RuleListScreen> {
+  // --- NEW: Helper methods to parse TimeOfDay for Kotlin ---
+  TimeOfDay? _parseTimeString(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      var hour = int.parse(parts[0]);
+      final minuteParts = parts[1].split(' ');
+      final minute = int.parse(minuteParts[0]);
+
+      if (timeStr.contains('PM') && hour != 12) hour += 12;
+      if (timeStr.contains('AM') && hour == 12) hour = 0;
+
+      return TimeOfDay(hour: hour, minute: minute);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  List<Map<String, int>> _convertRulesForNative(List<Rule> allRules) {
+    List<Map<String, int>> mappedRules = [];
+    for (var rule in allRules) {
+      // Only send ENABLED time-based rules
+      if (rule.isEnabled &&
+          rule.type == 0 &&
+          rule.startTime != null &&
+          rule.endTime != null) {
+        final start = _parseTimeString(rule.startTime!);
+        final end = _parseTimeString(rule.endTime!);
+        if (start != null && end != null) {
+          mappedRules.add({
+            'startHour': start.hour,
+            'startMinute': start.minute,
+            'endHour': end.hour,
+            'endMinute': end.minute,
+          });
+        }
+      }
+    }
+    return mappedRules;
+  }
+
   void _showDeleteDialog(Rule rule) {
     showDialog(
       context: context,
@@ -134,17 +174,22 @@ class _RuleListScreenState extends State<RuleListScreen> {
 
           ElevatedButton(
             onPressed: () async {
-              await DndService().startForegroundService(22, 7);
+              // 1. Fetch all current rules from Drift database
+              final allRules = await database.select(database.rules).get();
+              // 2. Convert them
+              final mappedRules = _convertRulesForNative(allRules);
+              // 3. Start service with dynamic rules
+              await DndService().startForegroundService(mappedRules);
             },
-            child: Text("Start Background Automation"),
+            child: const Text("Start Background Automation"),
           ),
 
-          ElevatedButton(
-            onPressed: () async {
-              await DndService().stopForegroundService();
-            },
-            child: Text("Stop Background Automation"),
-          ),
+          // ElevatedButton(
+          //   onPressed: () async {
+          //     await DndService().stopForegroundService();
+          //   },
+          //   child: Text("Stop Background Automation"),
+          // ),
 
           // --- ENHANCED RULE LIST ---
           Expanded(
@@ -258,14 +303,23 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                         await DndService.openDndSettings();
                                         return;
                                       }
-                                      database.updateRule(
+
+                                      // 1. Update the database
+                                      await database.updateRule(
                                         rule.copyWith(isEnabled: val),
                                       );
-                                      if (val) {
-                                        await DndService.enableDnd();
-                                      } else {
-                                        await DndService.disableDnd();
-                                      }
+
+                                      // 2. Fetch the newly updated list of rules
+                                      final allRules = await database
+                                          .select(database.rules)
+                                          .get();
+                                      final mappedRules =
+                                          _convertRulesForNative(allRules);
+
+                                      // 3. Push the fresh rules to the running Kotlin Service
+                                      await DndService().updateForegroundRules(
+                                        mappedRules,
+                                      );
                                     },
                                   ),
                                   IconButton(
