@@ -102,6 +102,15 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _radiusMeta = const VerificationMeta('radius');
+  @override
+  late final GeneratedColumn<int> radius = GeneratedColumn<int>(
+    'radius',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -112,6 +121,7 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     endTime,
     latitude,
     longitude,
+    radius,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -174,6 +184,12 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         longitude.isAcceptableOrUnknown(data['longitude']!, _longitudeMeta),
       );
     }
+    if (data.containsKey('radius')) {
+      context.handle(
+        _radiusMeta,
+        radius.isAcceptableOrUnknown(data['radius']!, _radiusMeta),
+      );
+    }
     return context;
   }
 
@@ -215,6 +231,10 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         DriftSqlType.double,
         data['${effectivePrefix}longitude'],
       ),
+      radius: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}radius'],
+      ),
     );
   }
 
@@ -233,6 +253,7 @@ class Rule extends DataClass implements Insertable<Rule> {
   final String? endTime;
   final double? latitude;
   final double? longitude;
+  final int? radius;
   const Rule({
     required this.id,
     required this.name,
@@ -242,6 +263,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     this.endTime,
     this.latitude,
     this.longitude,
+    this.radius,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -261,6 +283,9 @@ class Rule extends DataClass implements Insertable<Rule> {
     }
     if (!nullToAbsent || longitude != null) {
       map['longitude'] = Variable<double>(longitude);
+    }
+    if (!nullToAbsent || radius != null) {
+      map['radius'] = Variable<int>(radius);
     }
     return map;
   }
@@ -283,6 +308,9 @@ class Rule extends DataClass implements Insertable<Rule> {
       longitude: longitude == null && nullToAbsent
           ? const Value.absent()
           : Value(longitude),
+      radius: radius == null && nullToAbsent
+          ? const Value.absent()
+          : Value(radius),
     );
   }
 
@@ -300,6 +328,7 @@ class Rule extends DataClass implements Insertable<Rule> {
       endTime: serializer.fromJson<String?>(json['endTime']),
       latitude: serializer.fromJson<double?>(json['latitude']),
       longitude: serializer.fromJson<double?>(json['longitude']),
+      radius: serializer.fromJson<int?>(json['radius']),
     );
   }
   @override
@@ -314,6 +343,7 @@ class Rule extends DataClass implements Insertable<Rule> {
       'endTime': serializer.toJson<String?>(endTime),
       'latitude': serializer.toJson<double?>(latitude),
       'longitude': serializer.toJson<double?>(longitude),
+      'radius': serializer.toJson<int?>(radius),
     };
   }
 
@@ -326,6 +356,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     Value<String?> endTime = const Value.absent(),
     Value<double?> latitude = const Value.absent(),
     Value<double?> longitude = const Value.absent(),
+    Value<int?> radius = const Value.absent(),
   }) => Rule(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -335,6 +366,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     endTime: endTime.present ? endTime.value : this.endTime,
     latitude: latitude.present ? latitude.value : this.latitude,
     longitude: longitude.present ? longitude.value : this.longitude,
+    radius: radius.present ? radius.value : this.radius,
   );
   Rule copyWithCompanion(RulesCompanion data) {
     return Rule(
@@ -346,6 +378,7 @@ class Rule extends DataClass implements Insertable<Rule> {
       endTime: data.endTime.present ? data.endTime.value : this.endTime,
       latitude: data.latitude.present ? data.latitude.value : this.latitude,
       longitude: data.longitude.present ? data.longitude.value : this.longitude,
+      radius: data.radius.present ? data.radius.value : this.radius,
     );
   }
 
@@ -359,7 +392,8 @@ class Rule extends DataClass implements Insertable<Rule> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('latitude: $latitude, ')
-          ..write('longitude: $longitude')
+          ..write('longitude: $longitude, ')
+          ..write('radius: $radius')
           ..write(')'))
         .toString();
   }
@@ -374,6 +408,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     endTime,
     latitude,
     longitude,
+    radius,
   );
   @override
   bool operator ==(Object other) =>
@@ -386,7 +421,8 @@ class Rule extends DataClass implements Insertable<Rule> {
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
           other.latitude == this.latitude &&
-          other.longitude == this.longitude);
+          other.longitude == this.longitude &&
+          other.radius == this.radius);
 }
 
 class RulesCompanion extends UpdateCompanion<Rule> {
@@ -398,6 +434,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
   final Value<String?> endTime;
   final Value<double?> latitude;
   final Value<double?> longitude;
+  final Value<int?> radius;
   const RulesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -407,6 +444,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.endTime = const Value.absent(),
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
+    this.radius = const Value.absent(),
   });
   RulesCompanion.insert({
     this.id = const Value.absent(),
@@ -417,6 +455,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.endTime = const Value.absent(),
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
+    this.radius = const Value.absent(),
   }) : name = Value(name),
        type = Value(type);
   static Insertable<Rule> custom({
@@ -428,6 +467,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Expression<String>? endTime,
     Expression<double>? latitude,
     Expression<double>? longitude,
+    Expression<int>? radius,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -438,6 +478,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       if (endTime != null) 'end_time': endTime,
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
+      if (radius != null) 'radius': radius,
     });
   }
 
@@ -450,6 +491,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Value<String?>? endTime,
     Value<double?>? latitude,
     Value<double?>? longitude,
+    Value<int?>? radius,
   }) {
     return RulesCompanion(
       id: id ?? this.id,
@@ -460,6 +502,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       endTime: endTime ?? this.endTime,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      radius: radius ?? this.radius,
     );
   }
 
@@ -490,6 +533,9 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     if (longitude.present) {
       map['longitude'] = Variable<double>(longitude.value);
     }
+    if (radius.present) {
+      map['radius'] = Variable<int>(radius.value);
+    }
     return map;
   }
 
@@ -503,7 +549,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('latitude: $latitude, ')
-          ..write('longitude: $longitude')
+          ..write('longitude: $longitude, ')
+          ..write('radius: $radius')
           ..write(')'))
         .toString();
   }
@@ -530,6 +577,7 @@ typedef $$RulesTableCreateCompanionBuilder =
       Value<String?> endTime,
       Value<double?> latitude,
       Value<double?> longitude,
+      Value<int?> radius,
     });
 typedef $$RulesTableUpdateCompanionBuilder =
     RulesCompanion Function({
@@ -541,6 +589,7 @@ typedef $$RulesTableUpdateCompanionBuilder =
       Value<String?> endTime,
       Value<double?> latitude,
       Value<double?> longitude,
+      Value<int?> radius,
     });
 
 class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
@@ -588,6 +637,11 @@ class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
 
   ColumnFilters<double> get longitude => $composableBuilder(
     column: $table.longitude,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get radius => $composableBuilder(
+    column: $table.radius,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -640,6 +694,11 @@ class $$RulesTableOrderingComposer
     column: $table.longitude,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get radius => $composableBuilder(
+    column: $table.radius,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RulesTableAnnotationComposer
@@ -674,6 +733,9 @@ class $$RulesTableAnnotationComposer
 
   GeneratedColumn<double> get longitude =>
       $composableBuilder(column: $table.longitude, builder: (column) => column);
+
+  GeneratedColumn<int> get radius =>
+      $composableBuilder(column: $table.radius, builder: (column) => column);
 }
 
 class $$RulesTableTableManager
@@ -712,6 +774,7 @@ class $$RulesTableTableManager
                 Value<String?> endTime = const Value.absent(),
                 Value<double?> latitude = const Value.absent(),
                 Value<double?> longitude = const Value.absent(),
+                Value<int?> radius = const Value.absent(),
               }) => RulesCompanion(
                 id: id,
                 name: name,
@@ -721,6 +784,7 @@ class $$RulesTableTableManager
                 endTime: endTime,
                 latitude: latitude,
                 longitude: longitude,
+                radius: radius,
               ),
           createCompanionCallback:
               ({
@@ -732,6 +796,7 @@ class $$RulesTableTableManager
                 Value<String?> endTime = const Value.absent(),
                 Value<double?> latitude = const Value.absent(),
                 Value<double?> longitude = const Value.absent(),
+                Value<int?> radius = const Value.absent(),
               }) => RulesCompanion.insert(
                 id: id,
                 name: name,
@@ -741,6 +806,7 @@ class $$RulesTableTableManager
                 endTime: endTime,
                 latitude: latitude,
                 longitude: longitude,
+                radius: radius,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

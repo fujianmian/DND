@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'rule_form_screen.dart';
 import '../database/database.dart';
-import '../main.dart';
+import '../main.dart'; // Accesses global `database` and `automationManager`
 import '../services/dnd_service.dart';
 
 class RuleListScreen extends StatefulWidget {
@@ -13,50 +13,10 @@ class RuleListScreen extends StatefulWidget {
 }
 
 class _RuleListScreenState extends State<RuleListScreen> {
-  // --- NEW: Helper methods to parse TimeOfDay for Kotlin ---
-  TimeOfDay? _parseTimeString(String timeStr) {
-    try {
-      final parts = timeStr.split(':');
-      var hour = int.parse(parts[0]);
-      final minuteParts = parts[1].split(' ');
-      final minute = int.parse(minuteParts[0]);
-
-      if (timeStr.contains('PM') && hour != 12) hour += 12;
-      if (timeStr.contains('AM') && hour == 12) hour = 0;
-
-      return TimeOfDay(hour: hour, minute: minute);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  List<Map<String, int>> _convertRulesForNative(List<Rule> allRules) {
-    List<Map<String, int>> mappedRules = [];
-    for (var rule in allRules) {
-      // Only send ENABLED time-based rules
-      if (rule.isEnabled &&
-          rule.type == 0 &&
-          rule.startTime != null &&
-          rule.endTime != null) {
-        final start = _parseTimeString(rule.startTime!);
-        final end = _parseTimeString(rule.endTime!);
-        if (start != null && end != null) {
-          mappedRules.add({
-            'startHour': start.hour,
-            'startMinute': start.minute,
-            'endHour': end.hour,
-            'endMinute': end.minute,
-          });
-        }
-      }
-    }
-    return mappedRules;
-  }
-
   void _showDeleteDialog(Rule rule) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         final colorScheme = Theme.of(context).colorScheme;
         return AlertDialog(
           backgroundColor: colorScheme.surface,
@@ -70,7 +30,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: Text(
                 "Cancel",
                 style: TextStyle(color: colorScheme.secondary),
@@ -78,10 +38,17 @@ class _RuleListScreenState extends State<RuleListScreen> {
             ),
             FilledButton(
               onPressed: () async {
+                // 1. Delete from database
                 await database.deleteRule(rule);
-                if (mounted) Navigator.pop(context);
+
+                // 2. Sync deletion to the Android background service
+                automationManager.syncRulesToAndroid();
+
+                // 3. Safely pop using the dialog's context
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                }
               },
-              // ✅ LIGHT background means we force DARK text
               style: FilledButton.styleFrom(
                 backgroundColor: colorScheme.primary,
                 foregroundColor: colorScheme.onPrimary,
@@ -114,25 +81,21 @@ class _RuleListScreenState extends State<RuleListScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colorScheme.surface, // Dark background
+                color: colorScheme.surface,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.toggle_on,
-                        color: colorScheme.primary,
-                      ), // Light icon on dark background
+                      Icon(Icons.toggle_on, color: colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
                         "Manual Override",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: colorScheme
-                              .primary, // Light text on dark background
+                          color: colorScheme.primary,
                         ),
                       ),
                     ],
@@ -145,7 +108,6 @@ class _RuleListScreenState extends State<RuleListScreen> {
                           onPressed: () => DndService.enableDnd(),
                           icon: const Icon(Icons.do_not_disturb_on, size: 18),
                           label: const Text("Enable"),
-                          // ✅ LIGHT background means we force DARK text/icon
                           style: FilledButton.styleFrom(
                             backgroundColor: colorScheme.primary,
                             foregroundColor: colorScheme.onPrimary,
@@ -158,7 +120,6 @@ class _RuleListScreenState extends State<RuleListScreen> {
                           onPressed: () => DndService.disableDnd(),
                           icon: const Icon(Icons.do_not_disturb_off, size: 18),
                           label: const Text("Disable"),
-                          // Outlined button uses dark background, so text is secondary
                           style: OutlinedButton.styleFrom(
                             foregroundColor: colorScheme.secondary,
                             side: BorderSide(color: colorScheme.secondary),
@@ -174,22 +135,19 @@ class _RuleListScreenState extends State<RuleListScreen> {
 
           ElevatedButton(
             onPressed: () async {
-              // 1. Fetch all current rules from Drift database
-              final allRules = await database.select(database.rules).get();
-              // 2. Convert them
-              final mappedRules = _convertRulesForNative(allRules);
-              // 3. Start service with dynamic rules
-              await DndService().startForegroundService(mappedRules);
-            },
-            child: const Text("Start Background Automation"),
-          ),
+              // Push all current rules to the background service directly via the manager
+              await automationManager.syncRulesToAndroid();
 
-          // ElevatedButton(
-          //   onPressed: () async {
-          //     await DndService().stopForegroundService();
-          //   },
-          //   child: Text("Stop Background Automation"),
-          // ),
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Synced rules to background service!'),
+                  ),
+                );
+              }
+            },
+            child: const Text("Sync Rules to Background"),
+          ),
 
           // --- ENHANCED RULE LIST ---
           Expanded(
@@ -229,7 +187,6 @@ class _RuleListScreenState extends State<RuleListScreen> {
                     final isTimeRule = rule.type == 0;
 
                     return Card(
-                      // Uses the dark Surface color from global theme
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
                         onTap: () => Navigator.push(
@@ -246,15 +203,14 @@ class _RuleListScreenState extends State<RuleListScreen> {
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color:
-                                      colorScheme.primary, // ✅ Light Background
+                                  color: colorScheme.primary,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Icon(
                                   isTimeRule
                                       ? Icons.access_time_filled
                                       : Icons.location_on,
-                                  color: colorScheme.onPrimary, // ✅ Dark Icon
+                                  color: colorScheme.onPrimary,
                                   size: 28,
                                 ),
                               ),
@@ -270,8 +226,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
-                                        color: colorScheme
-                                            .primary, // Light text on dark card
+                                        color: colorScheme.primary,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -281,8 +236,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                           : "Location-based rule",
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: colorScheme
-                                            .secondary, // Secondary grey text
+                                        color: colorScheme.secondary,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -309,23 +263,13 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                         rule.copyWith(isEnabled: val),
                                       );
 
-                                      // 2. Fetch the newly updated list of rules
-                                      final allRules = await database
-                                          .select(database.rules)
-                                          .get();
-                                      final mappedRules =
-                                          _convertRulesForNative(allRules);
-
-                                      // 3. Push the fresh rules to the running Kotlin Service
-                                      await DndService().updateForegroundRules(
-                                        mappedRules,
-                                      );
+                                      // 2. Sync the change to the background Kotlin Service
+                                      automationManager.syncRulesToAndroid();
                                     },
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline),
-                                    color: colorScheme
-                                        .secondary, // Secondary grey icon
+                                    color: colorScheme.secondary,
                                     onPressed: () => _showDeleteDialog(rule),
                                   ),
                                 ],
@@ -342,14 +286,13 @@ class _RuleListScreenState extends State<RuleListScreen> {
           ),
         ],
       ),
-      // FAB automatically uses Accent (Light) background with Dark icon based on our main.dart theme, but we can explicitly set it here to be safe
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const RuleFormScreen()),
         ),
-        backgroundColor: colorScheme.primary, // Light Accent
-        foregroundColor: colorScheme.onPrimary, // Dark Text/Icon
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         icon: const Icon(Icons.add),
         label: const Text("New Rule"),
       ),

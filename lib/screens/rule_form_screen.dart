@@ -4,6 +4,7 @@ import '../database/database.dart';
 // Use a prefix to prevent the "Rule" name collision error
 import '../models/rule.dart' as model;
 import '../main.dart'; // Access global 'database'
+import 'map_picker_screen.dart'; // Make sure this matches your map screen file name
 
 class RuleFormScreen extends StatefulWidget {
   // Drift's generated Rule class from database.dart
@@ -20,8 +21,15 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
   late TextEditingController _nameController;
   late model.TriggerType _selectedType;
+
+  // Time state
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
+
+  // Location state
+  double? _latitude;
+  double? _longitude;
+  int? _radius;
 
   @override
   void initState() {
@@ -42,6 +50,13 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     }
     if (widget.rule?.endTime != null) {
       _endTime = _parseTimeString(widget.rule!.endTime!);
+    }
+
+    // 3. Load existing location data if editing a Location Rule
+    if (widget.rule?.latitude != null && widget.rule?.longitude != null) {
+      _latitude = widget.rule!.latitude;
+      _longitude = widget.rule!.longitude;
+      _radius = widget.rule!.radius;
     }
   }
 
@@ -86,6 +101,9 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             isEnabled: const d.Value(true),
             startTime: d.Value(startTimeStr),
             endTime: d.Value(endTimeStr),
+            latitude: d.Value(_latitude),
+            longitude: d.Value(_longitude),
+            radius: d.Value(_radius),
           ),
         );
       } else {
@@ -96,6 +114,9 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             type: typeInt,
             startTime: d.Value(startTimeStr),
             endTime: d.Value(endTimeStr),
+            latitude: d.Value(_latitude),
+            longitude: d.Value(_longitude),
+            radius: d.Value(_radius),
           ),
         );
       }
@@ -108,6 +129,21 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (widget.rule != null) {
       await database.deleteRule(widget.rule!);
       if (mounted) Navigator.pop(context);
+    }
+  }
+
+  Future<void> _selectLocationOnMap() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => MapPickerScreen()),
+    );
+
+    if (result != null) {
+      setState(() {
+        _latitude = result['latitude'];
+        _longitude = result['longitude'];
+        _radius = result['radius'];
+      });
     }
   }
 
@@ -199,11 +235,29 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                 ),
               ),
             ] else ...[
-              const Card(
+              const Text(
+                "Location Configuration",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Card(
                 child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    "Location Selection Placeholder\n(Coming in next stage)",
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.map, color: Colors.blue),
+                        title: Text(
+                          _latitude == null
+                              ? 'Tap to select a location'
+                              : 'Lat: ${_latitude!.toStringAsFixed(4)}, Lng: ${_longitude!.toStringAsFixed(4)}',
+                        ),
+                        subtitle: _radius != null
+                            ? Text('Radius: ${_radius}m')
+                            : null,
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _selectLocationOnMap,
+                      ),
+                    ],
                   ),
                 ),
               ),

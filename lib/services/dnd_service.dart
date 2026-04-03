@@ -4,7 +4,7 @@ class DndService {
   // 1. Define the MethodChannel with a unique name
   static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
 
-  // 2. Method to enable DND
+  // Method to enable DND (kept for manual overrides if needed)
   static Future<void> enableDnd() async {
     try {
       await platform.invokeMethod('enableDnd');
@@ -13,7 +13,7 @@ class DndService {
     }
   }
 
-  // 3. Method to disable DND
+  // Method to disable DND (kept for manual overrides if needed)
   static Future<void> disableDnd() async {
     try {
       await platform.invokeMethod('disableDnd');
@@ -22,7 +22,7 @@ class DndService {
     }
   }
 
-  // 4. Method to check if we have permission (Policy Access)
+  // Method to check if we have permission (Policy Access)
   static Future<bool> isPermissionGranted() async {
     try {
       final bool result = await platform.invokeMethod('checkPermission');
@@ -33,7 +33,7 @@ class DndService {
     }
   }
 
-  // 5. Method to open the system settings for DND permission
+  // Method to open the system settings for DND permission
   static Future<void> openDndSettings() async {
     try {
       await platform.invokeMethod('openDndSettings');
@@ -42,23 +42,30 @@ class DndService {
     }
   }
 
-  // Pass the formatted list of maps to Kotlin
-  Future<void> startForegroundService(List<Map<String, int>> rulesList) async {
+  // NEW: Sync all rules to the Android Foreground Service via arrays
+  static Future<void> syncRulesToService(
+    List<Map<String, dynamic>> timeRules,
+    List<Map<String, dynamic>> locationRules,
+  ) async {
     try {
-      await platform.invokeMethod('startService', {'rules': rulesList});
-      print('DND Foreground Service started with ${rulesList.length} rules.');
-    } on PlatformException catch (e) {
-      print("Failed to start foreground service: '${e.message}'.");
-    }
-  }
+      await platform.invokeMethod('startService', {
+        // Time rules arrays
+        "startHours": timeRules.map((r) => r['startHour'] as int).toList(),
+        "startMinutes": timeRules.map((r) => r['startMinute'] as int).toList(),
+        "endHours": timeRules.map((r) => r['endHour'] as int).toList(),
+        "endMinutes": timeRules.map((r) => r['endMinute'] as int).toList(),
 
-  // Call this whenever a rule is added/edited/deleted to update the running service
-  Future<void> updateForegroundRules(List<Map<String, int>> rulesList) async {
-    try {
-      await platform.invokeMethod('updateRules', {'rules': rulesList});
-      print('DND Foreground Service rules updated dynamically.');
+        // Location rules arrays
+        "locIds": locationRules.map((r) => r['id'].toString()).toList(),
+        "lats": locationRules.map((r) => r['lat'] as double).toList(),
+        "lngs": locationRules.map((r) => r['lng'] as double).toList(),
+        "rads": locationRules.map((r) => r['rad'] as int).toList(),
+      });
+      print(
+        'Successfully synced ${timeRules.length} time rules and ${locationRules.length} location rules to Android.',
+      );
     } on PlatformException catch (e) {
-      print("Failed to update foreground service: '${e.message}'.");
+      print("Failed to sync rules to foreground service: '${e.message}'.");
     }
   }
 }

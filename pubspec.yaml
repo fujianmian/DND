@@ -44,6 +44,7 @@ dependencies:
   # Permissions & Location
   permission_handler: ^11.3.1
   geolocator: ^11.0.0 # Helpful for initial location fetching
+  google_maps_flutter: ^2.5.3
 
 dev_dependencies:
   flutter_test:
