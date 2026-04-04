@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/services.dart';
 
 class MapPickerScreen extends StatefulWidget {
   final double? initialLatitude;
@@ -79,8 +80,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     );
   }
 
-  // Fetches autocomplete suggestions from Google Places API
-  // Fetches autocomplete suggestions from Google Places API (DEBUG VERSION)
   // Fetches autocomplete suggestions from Google Places API
   Future<void> _onSearchChanged(String query) async {
     if (query.isEmpty) {
@@ -317,9 +316,34 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                     ),
                     child: Row(
                       children: [
-                        Text(
-                          'Radius: ${_radius.toInt()}m',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        // Wrap Text in a SizedBox with fixed width so the slider doesn't shift
+                        SizedBox(
+                          width:
+                              130, // Slightly wider to fit the separated Row safely
+                          child: Row(
+                            children: [
+                              const Text(
+                                'Radius: ',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              // Dedicated fixed-width box for the number
+                              SizedBox(
+                                width: 40,
+                                child: Text(
+                                  '${_radius.toInt()}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign
+                                      .right, // Anchors the text to the right, next to the 'm'
+                                ),
+                              ),
+                              const Text(
+                                'm',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
                         Expanded(
                           child: Slider(
@@ -327,8 +351,17 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                             min: 50,
                             max: 1000,
                             divisions: 19,
-                            onChanged: (value) =>
-                                setState(() => _radius = value),
+                            onChanged: (value) {
+                              // Only play sound/haptic when the slider value actually snaps to a new division
+                              if (value != _radius) {
+                                // 1. Play a subtle selection click vibration
+                                HapticFeedback.selectionClick();
+                                // 2. Play the system UI "tik" click sound
+                                SystemSound.play(SystemSoundType.click);
+
+                                setState(() => _radius = value);
+                              }
+                            },
                           ),
                         ),
                       ],
