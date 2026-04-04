@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'database/database.dart';
 import 'services/automation_manager.dart';
 import 'screens/main_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 late AppDatabase database;
 late AutomationManager automationManager;
@@ -13,6 +14,8 @@ void main() {
 
   automationManager = AutomationManager();
   automationManager.start();
+
+  dotenv.load(fileName: ".env");
 
   runApp(const DndAutoApp());
 }

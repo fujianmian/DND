@@ -135,7 +135,14 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   Future<void> _selectLocationOnMap() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => MapPickerScreen()),
+      MaterialPageRoute(
+        builder: (context) => MapPickerScreen(
+          // Pass the existing values if they exist
+          initialLatitude: _latitude,
+          initialLongitude: _longitude,
+          initialRadius: _radius?.toDouble(),
+        ),
+      ),
     );
 
     if (result != null) {

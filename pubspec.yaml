@@ -45,6 +45,10 @@ dependencies:
   permission_handler: ^11.3.1
   geolocator: ^11.0.0 # Helpful for initial location fetching
   google_maps_flutter: ^2.5.3
+  geocoding: ^3.0.0
+  http: ^1.2.0
+
+  flutter_dotenv: ^5.1.0
 
 dev_dependencies:
   flutter_test:
@@ -71,7 +75,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
+  assets:
+    - .env
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

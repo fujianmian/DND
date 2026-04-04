@@ -16,7 +16,7 @@
         android:icon="@mipmap/ic_launcher">
 
         <meta-data android:name="com.google.android.geo.API_KEY"
-                   android:value="AIzaSyB3DC8HFY0N41zXB1cEnvayttMW1igYTEk"/>
+                   android:value="${MAPS_API_KEY}"/>
                    
         <service
             android:name=".DndForegroundService"
