@@ -46,27 +46,34 @@ class MainActivity: FlutterActivity() {
                 // --- FOREGROUND SERVICE CONTROLS ---
                 
                 "startService", "updateRules" -> {
-                    // Extract the list of rules mapped in Flutter
-                    val rulesList = call.argument<List<Map<String, Int>>>("rules") ?: emptyList()
-                    
-                    // Break down maps into arrays for safe Intent passing
-                    val startHours = rulesList.map { it["startHour"] ?: 0 }.toIntArray()
-                    val startMinutes = rulesList.map { it["startMinute"] ?: 0 }.toIntArray()
-                    val endHours = rulesList.map { it["endHour"] ?: 0 }.toIntArray()
-                    val endMinutes = rulesList.map { it["endMinute"] ?: 0 }.toIntArray()
+                    // 1. Extract Time Rules directly from the arguments
+                    val startHours = call.argument<ArrayList<Int>>("startHours")?.toIntArray() ?: intArrayOf()
+                    val startMinutes = call.argument<ArrayList<Int>>("startMinutes")?.toIntArray() ?: intArrayOf()
+                    val endHours = call.argument<ArrayList<Int>>("endHours")?.toIntArray() ?: intArrayOf()
+                    val endMinutes = call.argument<ArrayList<Int>>("endMinutes")?.toIntArray() ?: intArrayOf()
 
+                    // 2. Extract Location Rules directly from the arguments
+                    val locIds = call.argument<ArrayList<String>>("locIds")?.toTypedArray() ?: emptyArray()
+                    val lats = call.argument<ArrayList<Double>>("lats")?.toDoubleArray() ?: doubleArrayOf()
+                    val lngs = call.argument<ArrayList<Double>>("lngs")?.toDoubleArray() ?: doubleArrayOf()
+                    val rads = call.argument<ArrayList<Int>>("rads")?.toIntArray() ?: intArrayOf()
+
+                    // 3. Pass ALL rules to the Foreground Service
                     val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
                         putExtra("startHours", startHours)
                         putExtra("startMinutes", startMinutes)
                         putExtra("endHours", endHours)
                         putExtra("endMinutes", endMinutes)
+                        
+                        putExtra("locIds", locIds)
+                        putExtra("lats", lats)
+                        putExtra("lngs", lngs)
+                        putExtra("rads", rads)
                     }
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && call.method == "startService") {
                         startForegroundService(serviceIntent)
                     } else {
-                        // Using startService on an existing Foreground Service acts as an update
-                        // triggering onStartCommand again without tearing it down
                         startService(serviceIntent)
                     }
                     result.success(null)

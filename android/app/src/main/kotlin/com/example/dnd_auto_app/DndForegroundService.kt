@@ -101,7 +101,7 @@ class DndForegroundService : Service() {
         timer?.cancel()
         startAutomationLoop()
 
-        return START_STICKY 
+        return START_REDELIVER_INTENT 
     }
 
     private fun setupGeofences(ids: Array<String>, lats: DoubleArray, lngs: DoubleArray, rads: IntArray) {
@@ -178,8 +178,13 @@ class DndForegroundService : Service() {
             }
         }
 
+        // 🔹 MODIFIED: Read the persistent geofence state from SharedPreferences
+        // This prevents the state from resetting to false when the app is swiped away.
+        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
+        val isCurrentlyInsideGeofence = prefs.getBoolean("isInsideGeofence", false)
+
         // 🔹 STAGE 8 LOGIC: Trigger DND if Time matches OR if user is inside a Geofence
-        val shouldBeActive = timeRuleMatches || isInsideGeofence
+        val shouldBeActive = timeRuleMatches || isCurrentlyInsideGeofence
         val currentFilter = notificationManager.currentInterruptionFilter
 
         if (shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
