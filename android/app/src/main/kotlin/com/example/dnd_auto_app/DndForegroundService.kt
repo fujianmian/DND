@@ -172,7 +172,7 @@ class DndForegroundService : Service() {
             override fun run() {
                 checkAndToggleDnd()
             }
-        }, 0, 10000)
+        }, 0, 3000)
     }
 
     // Checks if the user is currently inside one of the target apps
@@ -181,7 +181,7 @@ class DndForegroundService : Service() {
 
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 1000 * 60 * 5 // Look at events from the last 5 minutes
+        val startTime = endTime - 1000 * 60 * 1 // Look at events from the last 5 minutes
 
         val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
         var currentForegroundApp: String? = null
