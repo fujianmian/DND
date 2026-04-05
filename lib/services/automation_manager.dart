@@ -37,6 +37,7 @@ class AutomationManager {
 
       List<Map<String, dynamic>> timeRulesMap = [];
       List<Map<String, dynamic>> locRulesMap = [];
+      List<String> appPackagesList = [];
 
       for (var rule in activeRules) {
         if (rule.type == 0 && rule.startTime != null && rule.endTime != null) {
@@ -60,11 +61,18 @@ class AutomationManager {
             'lng': rule.longitude!,
             'rad': rule.radius!,
           });
+        } else if (rule.type == 2 && rule.packageName != null) {
+          // 🔹 FIX 2: Collect the App Packages
+          appPackagesList.add(rule.packageName!);
         }
       }
 
       // Send the separated rules to the Kotlin Execution Engine
-      await DndService.syncRulesToService(timeRulesMap, locRulesMap);
+      await DndService.syncRulesToService(
+        timeRulesMap,
+        locRulesMap,
+        appPackagesList,
+      );
 
       // Update UI immediately after syncing
       _updateFlutterUIState();

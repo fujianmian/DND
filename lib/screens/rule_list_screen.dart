@@ -1,4 +1,3 @@
-// lib/screens/rule_list_screen.dart
 import 'package:flutter/material.dart';
 import 'rule_form_screen.dart';
 import '../database/database.dart';
@@ -184,7 +183,11 @@ class _RuleListScreenState extends State<RuleListScreen> {
                   itemCount: rules.length,
                   itemBuilder: (context, index) {
                     final rule = rules[index];
+
+                    // Identify which type of rule this is
                     final isTimeRule = rule.type == 0;
+                    final isLocationRule = rule.type == 1;
+                    final isAppRule = rule.type == 2;
 
                     return Card(
                       child: InkWell(
@@ -207,9 +210,12 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Icon(
+                                  // Show the correct icon depending on the rule type
                                   isTimeRule
                                       ? Icons.access_time_filled
-                                      : Icons.location_on,
+                                      : (isLocationRule
+                                            ? Icons.location_on
+                                            : Icons.apps),
                                   color: colorScheme.onPrimary,
                                   size: 28,
                                 ),
@@ -231,9 +237,12 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
+                                      // Show the correct subtitle depending on the rule type
                                       isTimeRule
                                           ? "${rule.startTime ?? '--:--'} to ${rule.endTime ?? '--:--'}"
-                                          : "Location-based rule",
+                                          : (isLocationRule
+                                                ? "Location-based rule"
+                                                : "App trigger: ${rule.packageName ?? 'Unknown'}"),
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: colorScheme.secondary,
@@ -251,19 +260,41 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                   Switch(
                                     value: rule.isEnabled,
                                     onChanged: (val) async {
-                                      bool hasPermission =
+                                      // 1. Check standard DND Permission
+                                      bool hasDndPermission =
                                           await DndService.isPermissionGranted();
-                                      if (!hasPermission) {
+                                      if (!hasDndPermission) {
                                         await DndService.openDndSettings();
                                         return;
                                       }
 
-                                      // 1. Update the database
+                                      // 2. If it is an App Rule and user is turning it ON, check Usage permission
+                                      if (val == true && isAppRule) {
+                                        bool hasUsagePermission =
+                                            await DndService.isUsagePermissionGranted();
+                                        if (!hasUsagePermission) {
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Please grant Usage Access to enable App triggers.',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                          await DndService.openUsageSettings();
+                                          return; // Stop here until permission is granted
+                                        }
+                                      }
+
+                                      // 3. Permissions are good, update the database
                                       await database.updateRule(
                                         rule.copyWith(isEnabled: val),
                                       );
 
-                                      // 2. Sync the change to the background Kotlin Service
+                                      // 4. Sync the change to the background Kotlin Service
                                       automationManager.syncRulesToAndroid();
                                     },
                                   ),

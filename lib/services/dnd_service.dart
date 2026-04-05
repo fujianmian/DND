@@ -1,71 +1,109 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 
 class DndService {
-  // 1. Define the MethodChannel with a unique name
   static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
 
-  // Method to enable DND (kept for manual overrides if needed)
-  static Future<void> enableDnd() async {
-    try {
-      await platform.invokeMethod('enableDnd');
-    } on PlatformException catch (e) {
-      print("Failed to enable DND: '${e.message}'.");
-    }
-  }
-
-  // Method to disable DND (kept for manual overrides if needed)
-  static Future<void> disableDnd() async {
-    try {
-      await platform.invokeMethod('disableDnd');
-    } on PlatformException catch (e) {
-      print("Failed to disable DND: '${e.message}'.");
-    }
-  }
-
-  // Method to check if we have permission (Policy Access)
+  // --- DND Permissions ---
   static Future<bool> isPermissionGranted() async {
     try {
       final bool result = await platform.invokeMethod('checkPermission');
       return result;
-    } on PlatformException catch (e) {
-      print("Failed to check permission: '${e.message}'.");
+    } on PlatformException catch (_) {
       return false;
     }
   }
 
-  // Method to open the system settings for DND permission
   static Future<void> openDndSettings() async {
     try {
       await platform.invokeMethod('openDndSettings');
     } on PlatformException catch (e) {
-      print("Failed to open settings: '${e.message}'.");
+      debugPrint("Failed to open DND settings: '${e.message}'.");
     }
   }
 
-  // NEW: Sync all rules to the Android Foreground Service via arrays
+  static Future<void> enableDnd() async {
+    try {
+      await platform.invokeMethod('enableDnd');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to enable DND: '${e.message}'.");
+    }
+  }
+
+  static Future<void> disableDnd() async {
+    try {
+      await platform.invokeMethod('disableDnd');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to disable DND: '${e.message}'.");
+    }
+  }
+
+  // --- NEW: Usage Stats Permissions ---
+  static Future<bool> isUsagePermissionGranted() async {
+    try {
+      final bool result = await platform.invokeMethod('checkUsagePermission');
+      return result;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> openUsageSettings() async {
+    try {
+      await platform.invokeMethod('openUsageSettings');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to open Usage settings: '${e.message}'.");
+    }
+  }
+
+  // --- Foreground Service Sync ---
   static Future<void> syncRulesToService(
     List<Map<String, dynamic>> timeRules,
-    List<Map<String, dynamic>> locationRules,
+    List<Map<String, dynamic>> locRules,
+    List<String> appPackages, // 🔹 NEW: Add App Packages
   ) async {
     try {
-      await platform.invokeMethod('startService', {
-        // Time rules arrays
-        "startHours": timeRules.map((r) => r['startHour'] as int).toList(),
-        "startMinutes": timeRules.map((r) => r['startMinute'] as int).toList(),
-        "endHours": timeRules.map((r) => r['endHour'] as int).toList(),
-        "endMinutes": timeRules.map((r) => r['endMinute'] as int).toList(),
+      List<int> startHours = timeRules
+          .map((e) => e['startHour'] as int)
+          .toList();
+      List<int> startMinutes = timeRules
+          .map((e) => e['startMinute'] as int)
+          .toList();
+      List<int> endHours = timeRules.map((e) => e['endHour'] as int).toList();
+      List<int> endMinutes = timeRules
+          .map((e) => e['endMinute'] as int)
+          .toList();
 
-        // Location rules arrays
-        "locIds": locationRules.map((r) => r['id'].toString()).toList(),
-        "lats": locationRules.map((r) => r['lat'] as double).toList(),
-        "lngs": locationRules.map((r) => r['lng'] as double).toList(),
-        "rads": locationRules.map((r) => (r['rad'] as num).toInt()).toList(),
+      List<String> locIds = locRules.map((e) => e['id'] as String).toList();
+      List<double> lats = locRules.map((e) => e['lat'] as double).toList();
+      List<double> lngs = locRules.map((e) => e['lng'] as double).toList();
+      List<int> rads = locRules.map((e) => e['rad'] as int).toList();
+
+      await platform.invokeMethod('startService', {
+        'startHours': startHours,
+        'startMinutes': startMinutes,
+        'endHours': endHours,
+        'endMinutes': endMinutes,
+
+        'locIds': locIds,
+        'lats': lats,
+        'lngs': lngs,
+        'rads': rads,
+
+        // 🔹 Pass App Packages to Kotlin
+        'appPackages': appPackages,
       });
-      print(
-        'Successfully synced ${timeRules.length} time rules and ${locationRules.length} location rules to Android.',
-      );
+      debugPrint("Successfully synced ALL rules to Android Service.");
     } on PlatformException catch (e) {
-      print("Failed to sync rules to foreground service: '${e.message}'.");
+      debugPrint("Failed to start service: '${e.message}'.");
+    }
+  }
+
+  static Future<void> stopService() async {
+    try {
+      await platform.invokeMethod('stopService');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to stop service: '${e.message}'.");
     }
   }
 }

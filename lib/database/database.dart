@@ -22,6 +22,9 @@ class Rules extends Table {
   RealColumn get latitude => real().nullable()();
   RealColumn get longitude => real().nullable()();
   IntColumn get radius => integer().nullable()(); // ADD THIS
+
+  // App Usage params (for future expansion)
+  TextColumn get packageName => text().nullable()();
 }
 
 // 2. The Database Class

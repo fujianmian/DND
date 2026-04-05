@@ -1,4 +1,4 @@
-enum TriggerType { time, location }
+enum TriggerType { time, location, app }
 
 class Rule {
   String id;
@@ -15,6 +15,9 @@ class Rule {
   double? longitude;
   double? radius; // in meters
 
+  // Parameters for App Usage
+  String? packageName; // e.g., "com.mobile.legends"
+
   Rule({
     required this.id,
     required this.name,
@@ -25,5 +28,6 @@ class Rule {
     this.latitude,
     this.longitude,
     this.radius,
+    this.packageName,
   });
 }

@@ -4,6 +4,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -34,6 +36,7 @@ class DndForegroundService : Service() {
     private val CHANNEL_ID = "DndServiceChannel"
     private var timer: Timer? = null
     private var activeRules: List<DndRule> = emptyList()
+    private var targetAppPackages: Array<String> = emptyArray() // Track App Triggers
     
     private lateinit var geofencingClient: GeofencingClient
 
@@ -83,10 +86,13 @@ class DndForegroundService : Service() {
         
         setupGeofences(locIds, lats, lngs, rads)
 
-        // 3. Foreground Notification
+        // 3. Extract App Usage Rules
+        targetAppPackages = intent?.getStringArrayExtra("appPackages") ?: emptyArray()
+
+        // 4. Foreground Notification
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("DND Automation Active")
-            .setContentText("Monitoring ${activeRules.size} time rule(s) & ${locIds.size} location(s)")
+            .setContentText("Monitoring ${activeRules.size} time(s), ${locIds.size} loc(s) & ${targetAppPackages.size} app(s)")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
@@ -97,7 +103,7 @@ class DndForegroundService : Service() {
             startForeground(1, notification)
         }
 
-        // 4. Start Time loop
+        // 5. Start loop
         timer?.cancel()
         startAutomationLoop()
 
@@ -113,7 +119,7 @@ class DndForegroundService : Service() {
         val pendingIntent = getGeofencePendingIntent()
         geofencingClient.removeGeofences(pendingIntent) 
 
-        // 1. Reset PERSISTENT state (The bug fix)
+        // Reset PERSISTENT state
         val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("isInsideGeofence", false).apply()
 
@@ -141,7 +147,6 @@ class DndForegroundService : Service() {
             .addGeofences(geofenceList)
             .build()
 
-        // ADDED: Listeners to track success/failure
         geofencingClient.addGeofences(geofencingRequest, pendingIntent).run {
             addOnSuccessListener {
                 android.util.Log.d("DndGeofence", "Successfully added ${ids.size} geofences.")
@@ -162,17 +167,46 @@ class DndForegroundService : Service() {
 
     private fun startAutomationLoop() {
         timer = Timer()
+        // Reduced polling to 10 seconds so game launching detects quickly
         timer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 checkAndToggleDnd()
             }
-        }, 0, 60000)
+        }, 0, 10000)
+    }
+
+    // Checks if the user is currently inside one of the target apps
+    private fun isTargetAppInForeground(): Boolean {
+        if (targetAppPackages.isEmpty()) return false
+
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - 1000 * 60 * 5 // Look at events from the last 5 minutes
+
+        val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
+        var currentForegroundApp: String? = null
+        val event = UsageEvents.Event()
+
+        // Iterate through all events to find the most recent state
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                currentForegroundApp = event.packageName
+            } else if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED) {
+                if (currentForegroundApp == event.packageName) {
+                    currentForegroundApp = null
+                }
+            }
+        }
+
+        return targetAppPackages.contains(currentForegroundApp)
     }
 
     private fun checkAndToggleDnd() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!notificationManager.isNotificationPolicyAccessGranted) return
 
+        // 1. Time Check
         val calendar = Calendar.getInstance()
         val currentTotal = (calendar.get(Calendar.HOUR_OF_DAY) * 60) + calendar.get(Calendar.MINUTE)
         var timeRuleMatches = false
@@ -195,13 +229,15 @@ class DndForegroundService : Service() {
             }
         }
 
-        // 🔹 MODIFIED: Read the persistent geofence state from SharedPreferences
-        // This prevents the state from resetting to false when the app is swiped away.
+        // 2. Location Check (Read persistent geofence state)
         val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
         val isCurrentlyInsideGeofence = prefs.getBoolean("isInsideGeofence", false)
 
-        // 🔹 STAGE 8 LOGIC: Trigger DND if Time matches OR if user is inside a Geofence
-        val shouldBeActive = timeRuleMatches || isCurrentlyInsideGeofence
+        // 3. App Check
+        val isAppRunning = isTargetAppInForeground()
+
+        // 4. Trigger Evaluation
+        val shouldBeActive = timeRuleMatches || isCurrentlyInsideGeofence || isAppRunning
         val currentFilter = notificationManager.currentInterruptionFilter
 
         if (shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
@@ -215,7 +251,6 @@ class DndForegroundService : Service() {
         super.onTaskRemoved(rootIntent)
         android.util.Log.w("DndService", "App swiped away! Requesting OS to keep service alive.")
         
-        // Tells Android to restart this Foreground Service if the OS killed it
         val restartServiceIntent = Intent(applicationContext, this.javaClass)
         restartServiceIntent.setPackage(packageName)
         
@@ -229,7 +264,7 @@ class DndForegroundService : Service() {
         val alarmService = applicationContext.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
         alarmService.set(
             android.app.AlarmManager.ELAPSED_REALTIME,
-            android.os.SystemClock.elapsedRealtime() + 1000, // Restart after 1 second
+            android.os.SystemClock.elapsedRealtime() + 1000, 
             restartServicePendingIntent
         )
     }
