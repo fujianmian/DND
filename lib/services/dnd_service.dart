@@ -59,7 +59,7 @@ class DndService {
         "locIds": locationRules.map((r) => r['id'].toString()).toList(),
         "lats": locationRules.map((r) => r['lat'] as double).toList(),
         "lngs": locationRules.map((r) => r['lng'] as double).toList(),
-        "rads": locationRules.map((r) => r['rad'] as int).toList(),
+        "rads": locationRules.map((r) => (r['rad'] as num).toInt()).toList(),
       });
       print(
         'Successfully synced ${timeRules.length} time rules and ${locationRules.length} location rules to Android.',

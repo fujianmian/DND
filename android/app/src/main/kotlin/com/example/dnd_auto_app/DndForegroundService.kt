@@ -106,14 +106,23 @@ class DndForegroundService : Service() {
 
     private fun setupGeofences(ids: Array<String>, lats: DoubleArray, lngs: DoubleArray, rads: IntArray) {
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            return // Stop if location permission is missing
+            android.util.Log.e("DndGeofence", "Permission ACCESS_FINE_LOCATION is missing!")
+            return 
         }
         
         val pendingIntent = getGeofencePendingIntent()
-        geofencingClient.removeGeofences(pendingIntent) // Clear existing geofences
-        isInsideGeofence = false // Reset state on update
+        geofencingClient.removeGeofences(pendingIntent) 
 
-        if (ids.isEmpty()) return
+        // 1. Reset PERSISTENT state (The bug fix)
+        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("isInsideGeofence", false).apply()
+
+        isInsideGeofence = false 
+
+        if (ids.isEmpty()) {
+            android.util.Log.d("DndGeofence", "No locations to monitor.")
+            return
+        }
 
         val geofenceList = mutableListOf<Geofence>()
         for (i in ids.indices) {
@@ -132,7 +141,15 @@ class DndForegroundService : Service() {
             .addGeofences(geofenceList)
             .build()
 
-        geofencingClient.addGeofences(geofencingRequest, pendingIntent)
+        // ADDED: Listeners to track success/failure
+        geofencingClient.addGeofences(geofencingRequest, pendingIntent).run {
+            addOnSuccessListener {
+                android.util.Log.d("DndGeofence", "Successfully added ${ids.size} geofences.")
+            }
+            addOnFailureListener {
+                android.util.Log.e("DndGeofence", "Failed to add geofences: ${it.message}")
+            }
+        }
     }
 
     private fun getGeofencePendingIntent(): PendingIntent {
@@ -192,6 +209,29 @@ class DndForegroundService : Service() {
         } else if (!shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
         }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        android.util.Log.w("DndService", "App swiped away! Requesting OS to keep service alive.")
+        
+        // Tells Android to restart this Foreground Service if the OS killed it
+        val restartServiceIntent = Intent(applicationContext, this.javaClass)
+        restartServiceIntent.setPackage(packageName)
+        
+        val restartServicePendingIntent = PendingIntent.getService(
+            applicationContext,
+            1,
+            restartServiceIntent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        val alarmService = applicationContext.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        alarmService.set(
+            android.app.AlarmManager.ELAPSED_REALTIME,
+            android.os.SystemClock.elapsedRealtime() + 1000, // Restart after 1 second
+            restartServicePendingIntent
+        )
     }
 
     override fun onDestroy() {
