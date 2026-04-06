@@ -56,6 +56,24 @@ class DndService {
     }
   }
 
+  // --- NEW: Fetch Individual App Details (Name & Icon) ---
+  static Future<Map<String, dynamic>?> getAppInfo(String packageName) async {
+    try {
+      final result = await platform.invokeMethod('getAppInfo', {
+        'packageName': packageName,
+      });
+      if (result != null) {
+        return {
+          'name': result['name'] as String,
+          'icon': result['icon'] as Uint8List?,
+        };
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get app info: '${e.message}'.");
+    }
+    return null;
+  }
+
   // --- Foreground Service Sync ---
   static Future<void> syncRulesToService(
     List<Map<String, dynamic>> timeRules,

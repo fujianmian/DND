@@ -11,10 +11,31 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.ArrayList
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
+import java.io.ByteArrayOutputStream
 
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.example.dnd_auto_app/dnd"
+
+    private fun getIconBytes(pm: PackageManager, packageName: String): ByteArray? {
+        return try {
+            val icon = pm.getApplicationIcon(packageName)
+            val bitmap = getBitmapFromDrawable(icon)
+            val stream = ByteArrayOutputStream()
+            // Scale icon down to 72x72 to prevent Memory Issues in Flutter
+            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 72, 72, true)
+            scaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            stream.toByteArray()
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -64,30 +85,61 @@ class MainActivity: FlutterActivity() {
                     result.success(null)
                 }
                 "getInstalledApps" -> {
-                    val pm = packageManager
-                    val intent = Intent(Intent.ACTION_MAIN, null)
-                    intent.addCategory(Intent.CATEGORY_LAUNCHER)
-                    
-                    val allApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
-                    } else {
-                        pm.queryIntentActivities(intent, 0)
-                    }
+                    // Run on a background thread so the UI doesn't freeze while loading icons
+                    Thread {
+                        try {
+                            val pm = packageManager
+                            val intent = Intent(Intent.ACTION_MAIN, null)
+                            intent.addCategory(Intent.CATEGORY_LAUNCHER)
+                            
+                            val allApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+                            } else {
+                                pm.queryIntentActivities(intent, 0)
+                            }
 
-                    val appList = ArrayList<Map<String, String>>()
-                    for (resolveInfo in allApps) {
-                        val appName = resolveInfo.loadLabel(pm).toString()
-                        val packageName = resolveInfo.activityInfo.packageName
-                        
-                        // Prevent duplicates
-                        if (appList.none { it["package"] == packageName }) {
-                            appList.add(mapOf("name" to appName, "package" to packageName))
+                            val appList = ArrayList<Map<String, Any>>()
+                            for (resolveInfo in allApps) {
+                                val packageName = resolveInfo.activityInfo.packageName
+                                
+                                if (appList.none { it["package"] == packageName }) {
+                                    val appName = resolveInfo.loadLabel(pm).toString()
+                                    val iconBytes = getIconBytes(pm, packageName)
+                                    
+                                    val map = mutableMapOf<String, Any>(
+                                        "name" to appName,
+                                        "package" to packageName
+                                    )
+                                    if (iconBytes != null) map["icon"] = iconBytes
+                                    
+                                    appList.add(map)
+                                }
+                            }
+                            appList.sortBy { (it["name"] as String).lowercase() }
+                            
+                            Handler(Looper.getMainLooper()).post { result.success(appList) }
+                        } catch (e: Exception) {
+                            Handler(Looper.getMainLooper()).post { result.error("ERROR", e.message, null) }
                         }
+                    }.start()
+                }
+
+                // --- 🔹 ENHANCEMENT 2: Fetch App Info for Rule List Screen ---
+                "getAppInfo" -> {
+                    val pkgName = call.argument<String>("packageName") ?: return@setMethodCallHandler result.success(null)
+                    try {
+                        val pm = packageManager
+                        val appInfo = pm.getApplicationInfo(pkgName, 0)
+                        val name = pm.getApplicationLabel(appInfo).toString()
+                        val iconBytes = getIconBytes(pm, pkgName)
+                        
+                        val map = mutableMapOf<String, Any>("name" to name)
+                        if (iconBytes != null) map["icon"] = iconBytes
+                        
+                        result.success(map)
+                    } catch (e: Exception) {
+                        result.success(null)
                     }
-                    // Sort alphabetically
-                    appList.sortBy { it["name"]?.lowercase() }
-                    
-                    result.success(appList)
                 }
                 
                 // --- FOREGROUND SERVICE CONTROLS ---

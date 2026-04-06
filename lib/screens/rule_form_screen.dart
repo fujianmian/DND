@@ -37,7 +37,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   // App state
   String? _packageName;
 
-  List<Map<String, String>> _installedApps = [];
+  List<Map<String, dynamic>> _installedApps = [];
   bool _isLoadingApps = false;
 
   @override
@@ -89,7 +89,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         'getInstalledApps',
       );
       setState(() {
-        _installedApps = apps.map((e) => Map<String, String>.from(e)).toList();
+        _installedApps = apps.map((e) => Map<String, dynamic>.from(e)).toList();
         _isLoadingApps = false;
       });
     } catch (e) {
@@ -329,18 +329,40 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             )
                             ? _packageName
                             : null,
-                        isExpanded:
-                            true, // Prevents layout overflow for long app names
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Select App to Trigger DND',
-                          prefixIcon: Icon(Icons.videogame_asset),
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.all(16),
                         ),
                         items: _installedApps.map((app) {
+                          // 🔹 Extract the Icon bytes
+                          final Uint8List? iconBytes =
+                              app['icon'] as Uint8List?;
+
                           return DropdownMenuItem<String>(
-                            value: app['package'],
-                            child: Text(app['name']!),
+                            value: app['package'] as String,
+                            child: Row(
+                              children: [
+                                // 🔹 Display the image, or a default icon if missing
+                                if (iconBytes != null)
+                                  Image.memory(iconBytes, width: 26, height: 26)
+                                else
+                                  const Icon(
+                                    Icons.android,
+                                    size: 26,
+                                    color: Colors.green,
+                                  ),
+
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    app['name'] as String,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           );
                         }).toList(),
                         onChanged: (val) => setState(() => _packageName = val),

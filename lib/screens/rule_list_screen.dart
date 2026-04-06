@@ -184,132 +184,157 @@ class _RuleListScreenState extends State<RuleListScreen> {
                   itemBuilder: (context, index) {
                     final rule = rules[index];
 
-                    // Identify which type of rule this is
                     final isTimeRule = rule.type == 0;
                     final isLocationRule = rule.type == 1;
                     final isAppRule = rule.type == 2;
 
-                    return Card(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => RuleFormScreen(rule: rule),
+                    // 🔹 Internal helper to render the UI for a rule
+                    Widget buildRuleCard(
+                      String displayName,
+                      Widget iconWidget,
+                    ) {
+                      return Card(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => RuleFormScreen(rule: rule),
+                            ),
                           ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            children: [
-                              // ICON CONTAINER
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary,
-                                  borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Row(
+                              children: [
+                                // ICON CONTAINER
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: iconWidget,
                                 ),
-                                child: Icon(
-                                  // Show the correct icon depending on the rule type
-                                  isTimeRule
-                                      ? Icons.access_time_filled
-                                      : (isLocationRule
-                                            ? Icons.location_on
-                                            : Icons.apps),
-                                  color: colorScheme.onPrimary,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
+                                const SizedBox(width: 16),
 
-                              // TEXT INFO
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                // TEXT INFO
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        rule.name,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: colorScheme.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        isTimeRule
+                                            ? "${rule.startTime ?? '--:--'} to ${rule.endTime ?? '--:--'}"
+                                            : (isLocationRule
+                                                  ? "Location-based rule"
+                                                  : "App trigger: $displayName"),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: colorScheme.secondary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // ACTIONS
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(
-                                      rule.name,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: colorScheme.primary,
-                                      ),
+                                    Switch(
+                                      value: rule.isEnabled,
+                                      onChanged: (val) async {
+                                        bool hasDndPermission =
+                                            await DndService.isPermissionGranted();
+                                        if (!hasDndPermission) {
+                                          await DndService.openDndSettings();
+                                          return;
+                                        }
+
+                                        if (val == true && isAppRule) {
+                                          bool hasUsagePermission =
+                                              await DndService.isUsagePermissionGranted();
+                                          if (!hasUsagePermission) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Please grant Usage Access to enable App triggers.',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                            await DndService.openUsageSettings();
+                                            return;
+                                          }
+                                        }
+
+                                        await database.updateRule(
+                                          rule.copyWith(isEnabled: val),
+                                        );
+                                        automationManager.syncRulesToAndroid();
+                                      },
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      // Show the correct subtitle depending on the rule type
-                                      isTimeRule
-                                          ? "${rule.startTime ?? '--:--'} to ${rule.endTime ?? '--:--'}"
-                                          : (isLocationRule
-                                                ? "Location-based rule"
-                                                : "App trigger: ${rule.packageName ?? 'Unknown'}"),
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: colorScheme.secondary,
-                                        fontWeight: FontWeight.w500,
-                                      ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline),
+                                      color: colorScheme.secondary,
+                                      onPressed: () => _showDeleteDialog(rule),
                                     ),
                                   ],
                                 ),
-                              ),
-
-                              // ACTIONS
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Switch(
-                                    value: rule.isEnabled,
-                                    onChanged: (val) async {
-                                      // 1. Check standard DND Permission
-                                      bool hasDndPermission =
-                                          await DndService.isPermissionGranted();
-                                      if (!hasDndPermission) {
-                                        await DndService.openDndSettings();
-                                        return;
-                                      }
-
-                                      // 2. If it is an App Rule and user is turning it ON, check Usage permission
-                                      if (val == true && isAppRule) {
-                                        bool hasUsagePermission =
-                                            await DndService.isUsagePermissionGranted();
-                                        if (!hasUsagePermission) {
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Please grant Usage Access to enable App triggers.',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                          await DndService.openUsageSettings();
-                                          return; // Stop here until permission is granted
-                                        }
-                                      }
-
-                                      // 3. Permissions are good, update the database
-                                      await database.updateRule(
-                                        rule.copyWith(isEnabled: val),
-                                      );
-
-                                      // 4. Sync the change to the background Kotlin Service
-                                      automationManager.syncRulesToAndroid();
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline),
-                                    color: colorScheme.secondary,
-                                    onPressed: () => _showDeleteDialog(rule),
-                                  ),
-                                ],
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      );
+                    }
+
+                    // 🔹 IF APP RULE: Dynamically fetch App Name and Icon
+                    if (isAppRule) {
+                      return FutureBuilder<Map<String, dynamic>?>(
+                        future: DndService.getAppInfo(rule.packageName ?? ''),
+                        builder: (context, snapshot) {
+                          // Extract Data
+                          final String displayName =
+                              snapshot.data?['name'] ??
+                              rule.packageName ??
+                              'Unknown App';
+                          final Uint8List? iconBytes = snapshot.data?['icon'];
+
+                          // Determine Icon Widget
+                          final Widget dynamicIcon = (iconBytes != null)
+                              ? Image.memory(iconBytes, width: 28, height: 28)
+                              : Icon(
+                                  Icons.apps,
+                                  color: colorScheme.onPrimary,
+                                  size: 28,
+                                );
+
+                          return buildRuleCard(displayName, dynamicIcon);
+                        },
+                      );
+                    }
+
+                    // 🔹 IF TIME OR LOCATION RULE: Render Normally
+                    final Widget staticIcon = Icon(
+                      isTimeRule ? Icons.access_time_filled : Icons.location_on,
+                      color: colorScheme.onPrimary,
+                      size: 28,
                     );
+                    return buildRuleCard("", staticIcon);
                   },
                 );
               },
