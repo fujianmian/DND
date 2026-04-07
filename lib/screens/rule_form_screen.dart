@@ -132,8 +132,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _selectedType = model.TriggerType.time;
       } else if (widget.rule!.type == 1) {
         _selectedType = model.TriggerType.location;
-      } else {
+      } else if (widget.rule!.type == 2) {
         _selectedType = model.TriggerType.app;
+      } else if (widget.rule!.type == 3) {
+        _selectedType = model.TriggerType.activity;
       }
     } else {
       _selectedType = model.TriggerType.time;
@@ -159,6 +161,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       _packageName = widget.rule!.packageName;
     }
 
+    if (widget.rule?.activityType != null) {
+      _activityType = widget.rule!.activityType;
+    }
+
     if (widget.rule != null) {
       if (widget.rule!.type == 0) {
         _selectedType = model.TriggerType.time;
@@ -174,9 +180,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     }
 
     // Load existing activity
-    if (widget.rule?.activityType != null) {
-      _activityType = widget.rule!.activityType;
-    }
 
     _fetchInstalledApps();
   }
@@ -262,6 +265,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             longitude: d.Value(_longitude),
             radius: d.Value(_radius),
             packageName: d.Value(_packageName), // Add package name
+            activityType: d.Value(_activityType),
           ),
         );
       }

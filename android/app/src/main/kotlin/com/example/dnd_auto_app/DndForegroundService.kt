@@ -127,11 +127,23 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         )
 
         if (shouldMonitor) {
+            android.util.Log.d("DndActivity", "Attempting to register Activity Recognition...")
             if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
-                // Request updates every 5 seconds
-                activityRecognitionClient.requestActivityUpdates(5000, pendingIntent)
+                
+                // Request updates and attach success/failure listeners
+                val task = activityRecognitionClient.requestActivityUpdates(3000, pendingIntent) // Polling every 3 seconds for testing
+                
+                task.addOnSuccessListener {
+                    android.util.Log.d("DndActivity", "SUCCESS: Activity updates registered with Google Play Services.")
+                }
+                task.addOnFailureListener { e ->
+                    android.util.Log.e("DndActivity", "FAILED to register activity updates: ${e.message}")
+                }
+            } else {
+                android.util.Log.e("DndActivity", "PERMISSION DENIED: ACTIVITY_RECOGNITION permission is missing.")
             }
         } else {
+            android.util.Log.d("DndActivity", "Removing activity updates (No activity rules active).")
             activityRecognitionClient.removeActivityUpdates(pendingIntent)
         }
     }
@@ -255,16 +267,19 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
         }
 
-        // 2. Location Check (Read persistent geofence state)
+        // 2. Location Check
         val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
         val isCurrentlyInsideGeofence = prefs.getBoolean("isInsideGeofence", false)
 
         // 3. App Check
         val isAppRunning = isTargetAppInForeground()
 
+        // 4. Activity Check with Logging
         var isTargetActivityDetected = false
         val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
         
+        android.util.Log.d("DndActivity", "Evaluating Rules. Current stored Activity Int: $currentActivityInt. Target Types: ${targetActivityTypes.joinToString()}")
+
         for (target in targetActivityTypes) {
             val matches = when (target) {
                 "IN_VEHICLE" -> currentActivityInt == DetectedActivity.IN_VEHICLE
@@ -277,17 +292,20 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
             if (matches) {
                 isTargetActivityDetected = true
+                android.util.Log.d("DndActivity", "MATCH FOUND for Activity: $target")
                 break
             }
         }
 
-        // 4. Trigger Evaluation
+        // 5. Trigger Evaluation
         val shouldBeActive = timeRuleMatches || isCurrentlyInsideGeofence || isAppRunning || isTargetActivityDetected
         val currentFilter = notificationManager.currentInterruptionFilter
 
         if (shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
+            android.util.Log.d("DndActivity", "Enabling DND Mode.")
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
         } else if (!shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+            android.util.Log.d("DndActivity", "Disabling DND Mode.")
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
         }
     }

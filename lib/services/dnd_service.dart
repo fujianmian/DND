@@ -111,6 +111,9 @@ class DndService {
 
         // 🔹 Pass App Packages to Kotlin
         'appPackages': appPackages,
+
+        // 🔹 Pass Activity Types to Kotlin
+        'activityTypes': activityTypes,
       });
       debugPrint("Successfully synced ALL rules to Android Service.");
     } on PlatformException catch (e) {
