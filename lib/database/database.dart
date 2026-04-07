@@ -25,6 +25,8 @@ class Rules extends Table {
 
   // App Usage params (for future expansion)
   TextColumn get packageName => text().nullable()();
+
+  TextColumn get activityType => text().nullable()();
 }
 
 // 2. The Database Class

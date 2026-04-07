@@ -23,6 +23,9 @@ import com.google.android.gms.location.LocationServices
 import java.util.Calendar
 import java.util.Timer
 import java.util.TimerTask
+import com.google.android.gms.location.ActivityRecognition
+import com.google.android.gms.location.ActivityRecognitionClient
+import com.google.android.gms.location.DetectedActivity
 
 data class DndRule(
     val startHour: Int,
@@ -37,6 +40,8 @@ class DndForegroundService : Service() {
     private var timer: Timer? = null
     private var activeRules: List<DndRule> = emptyList()
     private var targetAppPackages: Array<String> = emptyArray() // Track App Triggers
+    private var targetActivityTypes: Array<String> = emptyArray() // Track Activity Triggers
+    private lateinit var activityRecognitionClient: ActivityRecognitionClient
     
     private lateinit var geofencingClient: GeofencingClient
 
@@ -55,6 +60,7 @@ class DndForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         geofencingClient = LocationServices.getGeofencingClient(this)
+        activityRecognitionClient = ActivityRecognition.getClient(this)
 
         // Listen for internal broadcasts from the GeofenceBroadcastReceiver
         val filter = IntentFilter(ACTION_EVALUATE_DND)
@@ -65,7 +71,7 @@ class DndForegroundService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 1. Reconstruct Time Rules
         val startHours = intent?.getIntArrayExtra("startHours") ?: intArrayOf()
         val startMinutes = intent?.getIntArrayExtra("startMinutes") ?: intArrayOf()
@@ -89,10 +95,14 @@ class DndForegroundService : Service() {
         // 3. Extract App Usage Rules
         targetAppPackages = intent?.getStringArrayExtra("appPackages") ?: emptyArray()
 
-        // 4. Foreground Notification
+        // 4. Extract Activity Rules & Setup
+        targetActivityTypes = intent?.getStringArrayExtra("activityTypes") ?: emptyArray()
+        setupActivityRecognition(targetActivityTypes.isNotEmpty())
+
+        // 5. Foreground Notification (Combined correctly)
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("DND Automation Active")
-            .setContentText("Monitoring ${activeRules.size} time(s), ${locIds.size} loc(s) & ${targetAppPackages.size} app(s)")
+            .setContentText("Monitoring ${activeRules.size} time(s), ${locIds.size} loc(s), ${targetAppPackages.size} app(s) & ${targetActivityTypes.size} act(s)")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
@@ -103,11 +113,27 @@ class DndForegroundService : Service() {
             startForeground(1, notification)
         }
 
-        // 5. Start loop
+        // 6. Start loop
         timer?.cancel()
         startAutomationLoop()
 
         return START_REDELIVER_INTENT 
+    }
+
+    private fun setupActivityRecognition(shouldMonitor: Boolean) {
+        val intent = Intent(this, ActivityBroadcastReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            this, 1001, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+
+        if (shouldMonitor) {
+            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
+                // Request updates every 5 seconds
+                activityRecognitionClient.requestActivityUpdates(5000, pendingIntent)
+            }
+        } else {
+            activityRecognitionClient.removeActivityUpdates(pendingIntent)
+        }
     }
 
     private fun setupGeofences(ids: Array<String>, lats: DoubleArray, lngs: DoubleArray, rads: IntArray) {
@@ -236,8 +262,27 @@ class DndForegroundService : Service() {
         // 3. App Check
         val isAppRunning = isTargetAppInForeground()
 
+        var isTargetActivityDetected = false
+        val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
+        
+        for (target in targetActivityTypes) {
+            val matches = when (target) {
+                "IN_VEHICLE" -> currentActivityInt == DetectedActivity.IN_VEHICLE
+                "ON_BICYCLE" -> currentActivityInt == DetectedActivity.ON_BICYCLE
+                "WALKING" -> currentActivityInt == DetectedActivity.WALKING || currentActivityInt == DetectedActivity.ON_FOOT
+                "RUNNING" -> currentActivityInt == DetectedActivity.RUNNING
+                "STILL" -> currentActivityInt == DetectedActivity.STILL
+                "TILTING" -> currentActivityInt == DetectedActivity.TILTING
+                else -> false
+            }
+            if (matches) {
+                isTargetActivityDetected = true
+                break
+            }
+        }
+
         // 4. Trigger Evaluation
-        val shouldBeActive = timeRuleMatches || isCurrentlyInsideGeofence || isAppRunning
+        val shouldBeActive = timeRuleMatches || isCurrentlyInsideGeofence || isAppRunning || isTargetActivityDetected
         val currentFilter = notificationManager.currentInterruptionFilter
 
         if (shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {

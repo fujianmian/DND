@@ -9,6 +9,9 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+<uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+
 <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ProtectedPermissions" />
@@ -32,6 +35,9 @@
         </service>
         <receiver 
             android:name=".GeofenceBroadcastReceiver" 
+            android:exported="true" />
+        <receiver 
+            android:name=".ActivityBroadcastReceiver" 
             android:exported="true" />
 
         <activity

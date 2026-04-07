@@ -38,6 +38,7 @@ class AutomationManager {
       List<Map<String, dynamic>> timeRulesMap = [];
       List<Map<String, dynamic>> locRulesMap = [];
       List<String> appPackagesList = [];
+      List<String> activityTypesList = [];
 
       for (var rule in activeRules) {
         if (rule.type == 0 && rule.startTime != null && rule.endTime != null) {
@@ -64,6 +65,8 @@ class AutomationManager {
         } else if (rule.type == 2 && rule.packageName != null) {
           // 🔹 FIX 2: Collect the App Packages
           appPackagesList.add(rule.packageName!);
+        } else if (rule.type == 3 && rule.activityType != null) {
+          activityTypesList.add(rule.activityType!);
         }
       }
 
@@ -72,6 +75,7 @@ class AutomationManager {
         timeRulesMap,
         locRulesMap,
         appPackagesList,
+        activityTypesList,
       );
 
       // Update UI immediately after syncing

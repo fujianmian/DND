@@ -173,7 +173,10 @@ class MainActivity: FlutterActivity() {
                     // 3. Extract App Rules
                     val appPackages = call.argument<ArrayList<String>>("appPackages")?.toTypedArray() ?: emptyArray()
 
-                    // 4. Pass ALL rules to the Foreground Service
+                    // 4. Extract Activity Rules
+                    val activityTypes = call.argument<ArrayList<String>>("activityTypes")?.toTypedArray() ?: emptyArray()   
+
+                    // Pass ALL rules to the Foreground Service
                     val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
                         putExtra("startHours", startHours)
                         putExtra("startMinutes", startMinutes)
@@ -186,6 +189,8 @@ class MainActivity: FlutterActivity() {
                         putExtra("rads", rads)
 
                         putExtra("appPackages", appPackages)
+
+                        putExtra("activityTypes", activityTypes)
                     }
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && call.method == "startService") {

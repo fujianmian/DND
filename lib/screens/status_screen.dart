@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../main.dart'; // Allows access to the global automationManager
 import '../database/database.dart'; // Allows access to the Rule model
+import 'package:flutter/services.dart';
 
 class StatusScreen extends StatefulWidget {
   const StatusScreen({super.key});
@@ -11,6 +12,8 @@ class StatusScreen extends StatefulWidget {
 }
 
 class _StatusScreenState extends State<StatusScreen> {
+  static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
+
   late Timer _clockTimer;
   // TimeOfDay _currentTime = TimeOfDay.now();
 
@@ -23,12 +26,25 @@ class _StatusScreenState extends State<StatusScreen> {
   @override
   void initState() {
     super.initState();
+    _checkInitialDndPermission();
     // Update the clock every minute
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       setState(() {
         TimeOfDay.now(); // = TimeOfDay.now();
       });
     });
+  }
+
+  Future<void> _checkInitialDndPermission() async {
+    try {
+      final bool hasAccess = await platform.invokeMethod('checkPermission');
+      if (!hasAccess) {
+        // Redirect user to the DND settings page
+        await platform.invokeMethod('openDndSettings');
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Failed to check DND permission: ${e.message}");
+    }
   }
 
   @override

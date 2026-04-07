@@ -122,6 +122,17 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _activityTypeMeta = const VerificationMeta(
+    'activityType',
+  );
+  @override
+  late final GeneratedColumn<String> activityType = GeneratedColumn<String>(
+    'activity_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -134,6 +145,7 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     longitude,
     radius,
     packageName,
+    activityType,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -211,6 +223,15 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         ),
       );
     }
+    if (data.containsKey('activity_type')) {
+      context.handle(
+        _activityTypeMeta,
+        activityType.isAcceptableOrUnknown(
+          data['activity_type']!,
+          _activityTypeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -260,6 +281,10 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         DriftSqlType.string,
         data['${effectivePrefix}package_name'],
       ),
+      activityType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}activity_type'],
+      ),
     );
   }
 
@@ -280,6 +305,7 @@ class Rule extends DataClass implements Insertable<Rule> {
   final double? longitude;
   final int? radius;
   final String? packageName;
+  final String? activityType;
   const Rule({
     required this.id,
     required this.name,
@@ -291,6 +317,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     this.longitude,
     this.radius,
     this.packageName,
+    this.activityType,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -316,6 +343,9 @@ class Rule extends DataClass implements Insertable<Rule> {
     }
     if (!nullToAbsent || packageName != null) {
       map['package_name'] = Variable<String>(packageName);
+    }
+    if (!nullToAbsent || activityType != null) {
+      map['activity_type'] = Variable<String>(activityType);
     }
     return map;
   }
@@ -344,6 +374,9 @@ class Rule extends DataClass implements Insertable<Rule> {
       packageName: packageName == null && nullToAbsent
           ? const Value.absent()
           : Value(packageName),
+      activityType: activityType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(activityType),
     );
   }
 
@@ -363,6 +396,7 @@ class Rule extends DataClass implements Insertable<Rule> {
       longitude: serializer.fromJson<double?>(json['longitude']),
       radius: serializer.fromJson<int?>(json['radius']),
       packageName: serializer.fromJson<String?>(json['packageName']),
+      activityType: serializer.fromJson<String?>(json['activityType']),
     );
   }
   @override
@@ -379,6 +413,7 @@ class Rule extends DataClass implements Insertable<Rule> {
       'longitude': serializer.toJson<double?>(longitude),
       'radius': serializer.toJson<int?>(radius),
       'packageName': serializer.toJson<String?>(packageName),
+      'activityType': serializer.toJson<String?>(activityType),
     };
   }
 
@@ -393,6 +428,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     Value<double?> longitude = const Value.absent(),
     Value<int?> radius = const Value.absent(),
     Value<String?> packageName = const Value.absent(),
+    Value<String?> activityType = const Value.absent(),
   }) => Rule(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -404,6 +440,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     longitude: longitude.present ? longitude.value : this.longitude,
     radius: radius.present ? radius.value : this.radius,
     packageName: packageName.present ? packageName.value : this.packageName,
+    activityType: activityType.present ? activityType.value : this.activityType,
   );
   Rule copyWithCompanion(RulesCompanion data) {
     return Rule(
@@ -419,6 +456,9 @@ class Rule extends DataClass implements Insertable<Rule> {
       packageName: data.packageName.present
           ? data.packageName.value
           : this.packageName,
+      activityType: data.activityType.present
+          ? data.activityType.value
+          : this.activityType,
     );
   }
 
@@ -434,7 +474,8 @@ class Rule extends DataClass implements Insertable<Rule> {
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
-          ..write('packageName: $packageName')
+          ..write('packageName: $packageName, ')
+          ..write('activityType: $activityType')
           ..write(')'))
         .toString();
   }
@@ -451,6 +492,7 @@ class Rule extends DataClass implements Insertable<Rule> {
     longitude,
     radius,
     packageName,
+    activityType,
   );
   @override
   bool operator ==(Object other) =>
@@ -465,7 +507,8 @@ class Rule extends DataClass implements Insertable<Rule> {
           other.latitude == this.latitude &&
           other.longitude == this.longitude &&
           other.radius == this.radius &&
-          other.packageName == this.packageName);
+          other.packageName == this.packageName &&
+          other.activityType == this.activityType);
 }
 
 class RulesCompanion extends UpdateCompanion<Rule> {
@@ -479,6 +522,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
   final Value<double?> longitude;
   final Value<int?> radius;
   final Value<String?> packageName;
+  final Value<String?> activityType;
   const RulesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -490,6 +534,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.longitude = const Value.absent(),
     this.radius = const Value.absent(),
     this.packageName = const Value.absent(),
+    this.activityType = const Value.absent(),
   });
   RulesCompanion.insert({
     this.id = const Value.absent(),
@@ -502,6 +547,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.longitude = const Value.absent(),
     this.radius = const Value.absent(),
     this.packageName = const Value.absent(),
+    this.activityType = const Value.absent(),
   }) : name = Value(name),
        type = Value(type);
   static Insertable<Rule> custom({
@@ -515,6 +561,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Expression<double>? longitude,
     Expression<int>? radius,
     Expression<String>? packageName,
+    Expression<String>? activityType,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -527,6 +574,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       if (longitude != null) 'longitude': longitude,
       if (radius != null) 'radius': radius,
       if (packageName != null) 'package_name': packageName,
+      if (activityType != null) 'activity_type': activityType,
     });
   }
 
@@ -541,6 +589,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Value<double?>? longitude,
     Value<int?>? radius,
     Value<String?>? packageName,
+    Value<String?>? activityType,
   }) {
     return RulesCompanion(
       id: id ?? this.id,
@@ -553,6 +602,7 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       longitude: longitude ?? this.longitude,
       radius: radius ?? this.radius,
       packageName: packageName ?? this.packageName,
+      activityType: activityType ?? this.activityType,
     );
   }
 
@@ -589,6 +639,9 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     if (packageName.present) {
       map['package_name'] = Variable<String>(packageName.value);
     }
+    if (activityType.present) {
+      map['activity_type'] = Variable<String>(activityType.value);
+    }
     return map;
   }
 
@@ -604,7 +657,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
-          ..write('packageName: $packageName')
+          ..write('packageName: $packageName, ')
+          ..write('activityType: $activityType')
           ..write(')'))
         .toString();
   }
@@ -633,6 +687,7 @@ typedef $$RulesTableCreateCompanionBuilder =
       Value<double?> longitude,
       Value<int?> radius,
       Value<String?> packageName,
+      Value<String?> activityType,
     });
 typedef $$RulesTableUpdateCompanionBuilder =
     RulesCompanion Function({
@@ -646,6 +701,7 @@ typedef $$RulesTableUpdateCompanionBuilder =
       Value<double?> longitude,
       Value<int?> radius,
       Value<String?> packageName,
+      Value<String?> activityType,
     });
 
 class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
@@ -703,6 +759,11 @@ class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
 
   ColumnFilters<String> get packageName => $composableBuilder(
     column: $table.packageName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get activityType => $composableBuilder(
+    column: $table.activityType,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -765,6 +826,11 @@ class $$RulesTableOrderingComposer
     column: $table.packageName,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get activityType => $composableBuilder(
+    column: $table.activityType,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RulesTableAnnotationComposer
@@ -807,6 +873,11 @@ class $$RulesTableAnnotationComposer
     column: $table.packageName,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get activityType => $composableBuilder(
+    column: $table.activityType,
+    builder: (column) => column,
+  );
 }
 
 class $$RulesTableTableManager
@@ -847,6 +918,7 @@ class $$RulesTableTableManager
                 Value<double?> longitude = const Value.absent(),
                 Value<int?> radius = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
+                Value<String?> activityType = const Value.absent(),
               }) => RulesCompanion(
                 id: id,
                 name: name,
@@ -858,6 +930,7 @@ class $$RulesTableTableManager
                 longitude: longitude,
                 radius: radius,
                 packageName: packageName,
+                activityType: activityType,
               ),
           createCompanionCallback:
               ({
@@ -871,6 +944,7 @@ class $$RulesTableTableManager
                 Value<double?> longitude = const Value.absent(),
                 Value<int?> radius = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
+                Value<String?> activityType = const Value.absent(),
               }) => RulesCompanion.insert(
                 id: id,
                 name: name,
@@ -882,6 +956,7 @@ class $$RulesTableTableManager
                 longitude: longitude,
                 radius: radius,
                 packageName: packageName,
+                activityType: activityType,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

@@ -6,6 +6,7 @@ import '../models/rule.dart' as model;
 import '../main.dart'; // Access global 'database'
 import 'map_picker_screen.dart'; // Make sure this matches your map screen file name
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class RuleFormScreen extends StatefulWidget {
   // Drift's generated Rule class from database.dart
@@ -37,8 +38,87 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   // App state
   String? _packageName;
 
+  String? _activityType;
+  final Map<String, String> _availableActivities = {
+    'IN_VEHICLE': 'In Vehicle',
+    'ON_BICYCLE': 'On Bicycle',
+    'WALKING': 'Walking / On Foot',
+    'RUNNING': 'Running',
+    'STILL': 'Still / Not Moving',
+    'TILTING': 'Tilting Device',
+  };
+
   List<Map<String, dynamic>> _installedApps = [];
   bool _isLoadingApps = false;
+
+  void _showPermissionDialog(
+    String title,
+    String content,
+    VoidCallback onConfirm,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onConfirm();
+            },
+            child: const Text("Open Settings"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleTriggerTypeChange(model.TriggerType? val) async {
+    if (val == null) return;
+
+    if (val == model.TriggerType.app) {
+      final bool hasPermission = await platform.invokeMethod(
+        'checkUsagePermission',
+      );
+      if (!hasPermission) {
+        _showPermissionDialog(
+          "Usage Access Required",
+          "To detect which app is running, please grant Usage Access.",
+          () => platform.invokeMethod('openUsageSettings'),
+        );
+        return; // Stop here, don't change the UI state yet
+      }
+    } else if (val == model.TriggerType.location) {
+      var status = await Permission.location.request();
+      if (!status.isGranted) {
+        _showPermissionDialog(
+          "Location Required",
+          "To trigger DND by location, please grant Location permissions.",
+          () => openAppSettings(), // Opens App Info settings
+        );
+        return;
+      }
+      // Note: For background geofencing, you might also need Permission.locationAlways
+    } else if (val == model.TriggerType.activity) {
+      var status = await Permission.activityRecognition.request();
+      if (!status.isGranted) {
+        _showPermissionDialog(
+          "Activity Recognition Required",
+          "To trigger DND by physical activity, please grant Activity permissions.",
+          () => openAppSettings(),
+        );
+        return;
+      }
+    }
+
+    // If permissions are granted, update the UI
+    setState(() => _selectedType = val);
+  }
 
   @override
   void initState() {
@@ -77,6 +157,25 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     // 4. Load existing app data if editing an App Rule
     if (widget.rule?.packageName != null) {
       _packageName = widget.rule!.packageName;
+    }
+
+    if (widget.rule != null) {
+      if (widget.rule!.type == 0) {
+        _selectedType = model.TriggerType.time;
+      } else if (widget.rule!.type == 1) {
+        _selectedType = model.TriggerType.location;
+      } else if (widget.rule!.type == 2) {
+        _selectedType = model.TriggerType.app;
+      } else {
+        _selectedType = model.TriggerType.activity;
+      }
+    } else {
+      _selectedType = model.TriggerType.time;
+    }
+
+    // Load existing activity
+    if (widget.rule?.activityType != null) {
+      _activityType = widget.rule!.activityType;
     }
 
     _fetchInstalledApps();
@@ -127,7 +226,9 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
       final typeInt = _selectedType == model.TriggerType.time
           ? 0
-          : (_selectedType == model.TriggerType.location ? 1 : 2);
+          : (_selectedType == model.TriggerType.location
+                ? 1
+                : (_selectedType == model.TriggerType.app ? 2 : 3));
 
       // Formatting time to string for database storage
       final startTimeStr = _startTime?.format(context);
@@ -146,6 +247,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             longitude: d.Value(_longitude),
             radius: d.Value(_radius),
             packageName: d.Value(_packageName), // Add package name
+            activityType: d.Value(_activityType),
           ),
         );
       } else {
@@ -238,7 +340,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                     ),
                   )
                   .toList(),
-              onChanged: (val) => setState(() => _selectedType = val!),
+              onChanged: _handleTriggerTypeChange,
             ),
             const SizedBox(height: 20),
 
@@ -372,6 +474,36 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             ? 'Please select an application'
                             : null,
                       ),
+              ),
+            ] else if (_selectedType == model.TriggerType.activity) ...[
+              const Text(
+                "Activity Configuration",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: DropdownButtonFormField<String>(
+                    value: _activityType,
+                    decoration: const InputDecoration(
+                      labelText: 'Select an Activity',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(8),
+                    ),
+                    items: _availableActivities.entries.map((entry) {
+                      return DropdownMenuItem<String>(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      );
+                    }).toList(),
+                    onChanged: (val) => setState(() => _activityType = val),
+                    validator: (v) =>
+                        (_selectedType == model.TriggerType.activity &&
+                            (v == null || v.isEmpty))
+                        ? 'Please select an activity'
+                        : null,
+                  ),
+                ),
               ),
             ],
 

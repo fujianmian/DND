@@ -79,6 +79,7 @@ class DndService {
     List<Map<String, dynamic>> timeRules,
     List<Map<String, dynamic>> locRules,
     List<String> appPackages, // 🔹 NEW: Add App Packages
+    List<String> activityTypes, // 🔹 NEW: Add Activity Types
   ) async {
     try {
       List<int> startHours = timeRules
