@@ -181,7 +181,7 @@ class DndForegroundService : Service() {
 
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 1000 * 60 * 1 // Look at events from the last 5 minutes
+        val startTime = endTime - 1000 * 60 * 1 // Look at events from the last 1 minute
 
         val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
         var currentForegroundApp: String? = null
@@ -251,6 +251,7 @@ class DndForegroundService : Service() {
         super.onTaskRemoved(rootIntent)
         android.util.Log.w("DndService", "App swiped away! Requesting OS to keep service alive.")
         
+        // Tells Android to restart this Foreground Service if the OS killed it
         val restartServiceIntent = Intent(applicationContext, this.javaClass)
         restartServiceIntent.setPackage(packageName)
         
@@ -264,7 +265,7 @@ class DndForegroundService : Service() {
         val alarmService = applicationContext.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
         alarmService.set(
             android.app.AlarmManager.ELAPSED_REALTIME,
-            android.os.SystemClock.elapsedRealtime() + 1000, 
+            android.os.SystemClock.elapsedRealtime() + 1000, // Restart after 1 second
             restartServicePendingIntent
         )
     }

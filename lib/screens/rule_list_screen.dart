@@ -3,6 +3,7 @@ import 'rule_form_screen.dart';
 import '../database/database.dart';
 import '../main.dart'; // Accesses global `database` and `automationManager`
 import '../services/dnd_service.dart';
+import 'dart:typed_data';
 
 class RuleListScreen extends StatefulWidget {
   const RuleListScreen({super.key});
