@@ -93,6 +93,9 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         );
         return; // Stop here, don't change the UI state yet
       }
+      if (_installedApps.isEmpty) {
+        _fetchInstalledApps();
+      }
     } else if (val == model.TriggerType.location) {
       var status = await Permission.location.request();
       if (!status.isGranted) {
@@ -134,6 +137,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _selectedType = model.TriggerType.location;
       } else if (widget.rule!.type == 2) {
         _selectedType = model.TriggerType.app;
+        _fetchInstalledApps();
       } else if (widget.rule!.type == 3) {
         _selectedType = model.TriggerType.activity;
       }
@@ -164,24 +168,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (widget.rule?.activityType != null) {
       _activityType = widget.rule!.activityType;
     }
-
-    if (widget.rule != null) {
-      if (widget.rule!.type == 0) {
-        _selectedType = model.TriggerType.time;
-      } else if (widget.rule!.type == 1) {
-        _selectedType = model.TriggerType.location;
-      } else if (widget.rule!.type == 2) {
-        _selectedType = model.TriggerType.app;
-      } else {
-        _selectedType = model.TriggerType.activity;
-      }
-    } else {
-      _selectedType = model.TriggerType.time;
-    }
-
-    // Load existing activity
-
-    _fetchInstalledApps();
   }
 
   Future<void> _fetchInstalledApps() async {

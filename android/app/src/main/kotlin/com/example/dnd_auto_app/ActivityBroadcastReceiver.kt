@@ -35,12 +35,15 @@ class ActivityBroadcastReceiver : BroadcastReceiver() {
                 Toast.makeText(context, "$activityName (${mostProbableActivity.confidence}%)", Toast.LENGTH_SHORT).show()
 
                 // Save to preferences if confidence is decent
-                if (mostProbableActivity.confidence > 40) { // Lowered to 40% for easier testing
+                if (mostProbableActivity.confidence > 40) { 
                     val prefs = context.getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
                     prefs.edit().putInt("currentActivityType", mostProbableActivity.type).apply()
                     
                     Log.d("DndActivity", "Saved $activityName to SharedPreferences. Triggering evaluation.")
+                    
                     val updateIntent = Intent(DndForegroundService.ACTION_EVALUATE_DND)
+                    // 🔴 FIX: Explicitly target the app package so Android security allows the internal broadcast to fire instantly
+                    updateIntent.setPackage(context.packageName) 
                     context.sendBroadcast(updateIntent)
                 }
             }
