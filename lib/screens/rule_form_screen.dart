@@ -235,7 +235,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             latitude: d.Value(_latitude),
             longitude: d.Value(_longitude),
             radius: d.Value(_radius),
-            packageName: d.Value(_packageName), // Add package name
+            packageName: d.Value(_packageName),
             activityType: d.Value(_activityType),
           ),
         );
@@ -250,11 +250,14 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             latitude: d.Value(_latitude),
             longitude: d.Value(_longitude),
             radius: d.Value(_radius),
-            packageName: d.Value(_packageName), // Add package name
+            packageName: d.Value(_packageName),
             activityType: d.Value(_activityType),
           ),
         );
       }
+
+      // 🔴 FIX: Tell the Android Service the rules have changed!
+      await automationManager.syncRulesToAndroid();
 
       if (mounted) Navigator.pop(context);
     }
@@ -263,6 +266,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   void _deleteRule() async {
     if (widget.rule != null) {
       await database.deleteRule(widget.rule!);
+
+      // 🔴 FIX: Sync deletion to Android Service
+      await automationManager.syncRulesToAndroid();
+
       if (mounted) Navigator.pop(context);
     }
   }

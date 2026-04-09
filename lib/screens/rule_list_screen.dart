@@ -188,6 +188,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
                     final isTimeRule = rule.type == 0;
                     final isLocationRule = rule.type == 1;
                     final isAppRule = rule.type == 2;
+                    final isActivityRule = rule.type == 3;
 
                     // 🔹 Internal helper to render the UI for a rule
                     Widget buildRuleCard(
@@ -238,7 +239,9 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                             ? "${rule.startTime ?? '--:--'} to ${rule.endTime ?? '--:--'}"
                                             : (isLocationRule
                                                   ? "Location-based rule"
-                                                  : "App trigger: $displayName"),
+                                                  : (isAppRule
+                                                        ? "App trigger: $displayName"
+                                                        : "Activity trigger: ${rule.activityType ?? 'Unknown'}")),
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: colorScheme.secondary,
@@ -331,7 +334,13 @@ class _RuleListScreenState extends State<RuleListScreen> {
 
                     // 🔹 IF TIME OR LOCATION RULE: Render Normally
                     final Widget staticIcon = Icon(
-                      isTimeRule ? Icons.access_time_filled : Icons.location_on,
+                      isTimeRule
+                          ? Icons.access_time_filled
+                          : (isLocationRule
+                                ? Icons.location_on
+                                : (isActivityRule
+                                      ? Icons.directions_run
+                                      : Icons.rule)), // 🔴 UPDATED ICON LOGIC
                       color: colorScheme.onPrimary,
                       size: 28,
                     );
