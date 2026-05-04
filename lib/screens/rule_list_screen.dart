@@ -109,7 +109,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
           Icon(
             Icons.auto_awesome,
             size: 64,
-            color: Theme.of(context).colorScheme.outlineOpacity,
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 16),
           const Text("No rules yet."),

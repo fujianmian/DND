@@ -67,7 +67,7 @@ class _RuleBuilderScreenState extends State<RuleBuilderScreen> {
           decoration: BoxDecoration(
             color: theme.colorScheme.secondaryContainer.withOpacity(0.5),
             borderRadius: BorderRadius.circular(16),
-            border: BorderSide(color: theme.colorScheme.secondaryContainer),
+            border: Border.fromBorderSide(BorderSide(color: Colors.grey)),
           ),
           child: Column(
             children: [

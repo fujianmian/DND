@@ -20,7 +20,7 @@ class QuietlyApp extends StatelessWidget {
           brightness: Brightness.light,
           background: const Color(0xFFFAFAFA), // Off-white neutral background
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 0, // Flat, clean look
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20), // Soft rounded corners

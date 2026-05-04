@@ -58,3 +58,6 @@ LazyDatabase _openConnection() {
     return NativeDatabase(file);
   });
 }
+
+final database =
+    AppDatabase(); // Replace 'AppDatabase' if your class is named differently
