@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import 'create_rule_wizard.dart'; // New Wizard screen
+import 'create_rule_wizard.dart';
 
 class RuleListScreen extends StatefulWidget {
   const RuleListScreen({Key? key}) : super(key: key);
@@ -10,7 +10,7 @@ class RuleListScreen extends StatefulWidget {
 }
 
 class _RuleListScreenState extends State<RuleListScreen> {
-  // MOCKED DATA: Replace with Database call
+  // MOCKED DATA
   List<Map<String, dynamic>> dummyRules = [
     {
       'name': 'Office Focus',
@@ -51,12 +51,11 @@ class _RuleListScreenState extends State<RuleListScreen> {
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryText,
+                                color: AppTheme.pureBlack,
                               ),
                             ),
                             Switch(
                               value: rule['isActive'],
-                              activeColor: AppTheme.royalViolet,
                               onChanged: (val) {
                                 setState(() => rule['isActive'] = val);
                                 // TODO: Update in database
@@ -74,7 +73,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
                             Text(
                               rule['logic'],
                               style: const TextStyle(
-                                color: AppTheme.electricBlue,
+                                color: AppTheme.logoPurple,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12,
                               ),
@@ -105,32 +104,36 @@ class _RuleListScreenState extends State<RuleListScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.offWhiteBg,
+        color: AppTheme.pureWhite,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppTheme.logoBlue),
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 12, color: AppTheme.mutedText),
+        style: const TextStyle(fontSize: 12, color: AppTheme.pureBlack),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.auto_awesome, size: 64, color: AppTheme.lavenderGlow),
-          SizedBox(height: 16),
-          Text(
+          const Icon(Icons.auto_awesome, size: 64, color: AppTheme.logoCyan),
+          const SizedBox(height: 16),
+          const Text(
             'No rules yet',
-            style: TextStyle(fontSize: 20, color: AppTheme.primaryText),
+            style: TextStyle(
+              fontSize: 20,
+              color: AppTheme.pureBlack,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             'Tap the + button to automate your peace of mind.',
-            style: TextStyle(color: AppTheme.mutedText),
+            style: TextStyle(color: AppTheme.pureBlack.withOpacity(0.6)),
           ),
         ],
       ),

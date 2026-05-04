@@ -1,60 +1,54 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Primary identity colors
-  static const Color deepIndigo = Color(0xFF171A4A);
-  static const Color royalViolet = Color(0xFF745CFF);
-  static const Color electricBlue = Color(0xFF4A86FF);
-  static const Color softCyan = Color(0xFF52D6F5);
-  static const Color lavenderGlow = Color(0xFFC9B8FF);
+  // Extracted directly from the provided logo
+  static const Color logoPurple = Color(0xFFB588FF);
+  static const Color logoBlue = Color(0xFF5A9CFF);
+  static const Color logoCyan = Color(0xFF4EE0D4);
 
-  // Background & Surface
-  static const Color offWhiteBg = Color(0xFFF7F8FC);
-  static const Color surfaceWhite = Color(0xFFFFFFFF);
-
-  // Text
-  static const Color primaryText = Color(0xFF1D1F2A);
-  static const Color mutedText = Color(0xFF5E6472);
+  // Strictly allowed extra colors
+  static const Color pureWhite = Color(0xFFFFFFFF);
+  static const Color pureBlack = Color(0xFF000000);
 
   static ThemeData get lightTheme {
     return ThemeData(
       brightness: Brightness.light,
-      primaryColor: royalViolet,
-      scaffoldBackgroundColor: offWhiteBg,
-      fontFamily:
-          'Roboto', // Replace with your premium font if applicable (e.g., GoogleFonts.inter())
+      primaryColor: logoBlue,
+      scaffoldBackgroundColor: pureWhite,
       colorScheme: const ColorScheme.light(
-        primary: royalViolet,
-        secondary: electricBlue,
-        surface: surfaceWhite,
-        background: offWhiteBg,
-        onPrimary: surfaceWhite,
-        onSurface: primaryText,
+        primary: logoBlue,
+        secondary: logoCyan,
+        tertiary: logoPurple,
+        surface: pureWhite,
+        background: pureWhite,
+        onPrimary: pureWhite,
+        onSurface: pureBlack,
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: offWhiteBg,
+        backgroundColor: pureWhite,
         elevation: 0,
         centerTitle: false,
-        iconTheme: IconThemeData(color: deepIndigo),
+        iconTheme: IconThemeData(color: pureBlack),
         titleTextStyle: TextStyle(
-          color: deepIndigo,
+          color: pureBlack,
           fontSize: 24,
           fontWeight: FontWeight.bold,
         ),
       ),
       cardTheme: CardThemeData(
-        color: surfaceWhite,
+        color: pureWhite,
         elevation: 0,
         margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: Color(0xFFE5E7EB), width: 1),
+          // Subtle pure black opacity border for depth without adding gray
+          side: BorderSide(color: pureBlack.withOpacity(0.1), width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: royalViolet,
-          foregroundColor: surfaceWhite,
+          backgroundColor: logoBlue,
+          foregroundColor: pureWhite,
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
           shape: RoundedRectangleBorder(
@@ -63,28 +57,37 @@ class AppTheme {
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: royalViolet,
-        foregroundColor: surfaceWhite,
+        backgroundColor: logoBlue,
+        foregroundColor: pureWhite,
         elevation: 4,
       ),
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateProperty.resolveWith((states) {
+          return pureWhite;
+        }),
+        trackColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return logoCyan;
+          return pureBlack.withOpacity(0.2); // Faded black for off state
+        }),
+      ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: surfaceWhite,
-        indicatorColor: lavenderGlow.withOpacity(0.5),
+        backgroundColor: pureWhite,
+        indicatorColor: logoPurple.withOpacity(0.2), // Soft purple highlight
         labelTextStyle: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
             return const TextStyle(
-              color: deepIndigo,
+              color: logoBlue,
               fontWeight: FontWeight.bold,
               fontSize: 12,
             );
           }
-          return const TextStyle(color: mutedText, fontSize: 12);
+          return TextStyle(color: pureBlack.withOpacity(0.5), fontSize: 12);
         }),
         iconTheme: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
-            return const IconThemeData(color: deepIndigo);
+            return const IconThemeData(color: logoBlue);
           }
-          return const IconThemeData(color: mutedText);
+          return IconThemeData(color: pureBlack.withOpacity(0.5));
         }),
       ),
     );

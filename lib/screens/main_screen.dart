@@ -3,6 +3,7 @@ import 'home_screen.dart';
 import 'rule_list_screen.dart';
 import 'insights_screen.dart';
 import 'settings_screen.dart';
+import '../theme/app_theme.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -24,6 +25,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.pureWhite,
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,

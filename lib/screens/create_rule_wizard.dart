@@ -10,9 +10,6 @@ class CreateRuleWizard extends StatefulWidget {
 
 class _CreateRuleWizardState extends State<CreateRuleWizard> {
   int _currentStep = 0;
-
-  // MOCKED STATE
-  List<String> selectedTriggers = ['Location: Office'];
   String logicMode = 'AND';
 
   @override
@@ -25,7 +22,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
           if (_currentStep < 2)
             setState(() => _currentStep += 1);
           else
-            Navigator.pop(context); // MOCKED: Save rule
+            Navigator.pop(context);
         },
         onStepCancel: () {
           if (_currentStep > 0) setState(() => _currentStep -= 1);
@@ -43,9 +40,11 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
                 if (_currentStep > 0)
                   TextButton(
                     onPressed: details.onStepCancel,
-                    child: const Text(
+                    child: Text(
                       'Back',
-                      style: TextStyle(color: AppTheme.mutedText),
+                      style: TextStyle(
+                        color: AppTheme.pureBlack.withOpacity(0.6),
+                      ),
                     ),
                   ),
               ],
@@ -54,27 +53,46 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
         },
         steps: [
           Step(
-            title: const Text('Name your rule'),
+            title: const Text(
+              'Name your rule',
+              style: TextStyle(color: AppTheme.pureBlack),
+            ),
             content: TextFormField(
+              style: const TextStyle(color: AppTheme.pureBlack),
               decoration: InputDecoration(
                 hintText: 'e.g., Deep Work',
+                hintStyle: TextStyle(
+                  color: AppTheme.pureBlack.withOpacity(0.3),
+                ),
                 filled: true,
-                fillColor: AppTheme.surfaceWhite,
-                border: OutlineInputBorder(
+                fillColor: AppTheme.pureWhite,
+                enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(
+                    color: AppTheme.pureBlack.withOpacity(0.2),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.logoBlue),
                 ),
               ),
             ),
             isActive: _currentStep >= 0,
           ),
           Step(
-            title: const Text('Set Triggers (Visual Builder)'),
+            title: const Text(
+              'Set Triggers',
+              style: TextStyle(color: AppTheme.pureBlack),
+            ),
             content: _buildVisualBuilder(),
             isActive: _currentStep >= 1,
           ),
           Step(
-            title: const Text('Exceptions & Actions'),
+            title: const Text(
+              'Exceptions & Actions',
+              style: TextStyle(color: AppTheme.pureBlack),
+            ),
             content: _buildActionExceptions(),
             isActive: _currentStep >= 2,
           ),
@@ -90,22 +108,32 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppTheme.surfaceWhite,
+            color: AppTheme.pureWhite,
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.pureBlack.withOpacity(0.1)),
           ),
           child: Column(
             children: [
               Chip(
-                label: const Text('Location: Office'),
-                deleteIcon: const Icon(Icons.close, size: 16),
+                label: const Text(
+                  'Location: Office',
+                  style: TextStyle(color: AppTheme.pureBlack),
+                ),
+                deleteIcon: const Icon(
+                  Icons.close,
+                  size: 16,
+                  color: AppTheme.pureBlack,
+                ),
                 onDeleted: () {},
-                backgroundColor: AppTheme.lavenderGlow.withOpacity(0.4),
+                backgroundColor: AppTheme.logoCyan.withOpacity(0.2),
+                side: BorderSide.none,
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: logicMode,
+                    dropdownColor: AppTheme.pureWhite,
                     items: ['AND', 'OR']
                         .map(
                           (e) => DropdownMenuItem(
@@ -114,7 +142,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
                               e,
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: AppTheme.electricBlue,
+                                color: AppTheme.logoPurple,
                               ),
                             ),
                           ),
@@ -125,23 +153,32 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
                 ),
               ),
               Chip(
-                label: const Text('Time: Weekdays 9-5'),
-                deleteIcon: const Icon(Icons.close, size: 16),
+                label: const Text(
+                  'Time: Weekdays 9-5',
+                  style: TextStyle(color: AppTheme.pureBlack),
+                ),
+                deleteIcon: const Icon(
+                  Icons.close,
+                  size: 16,
+                  color: AppTheme.pureBlack,
+                ),
                 onDeleted: () {},
-                backgroundColor: AppTheme.lavenderGlow.withOpacity(0.4),
+                backgroundColor: AppTheme.logoCyan.withOpacity(0.2),
+                side: BorderSide.none,
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
         OutlinedButton.icon(
-          onPressed: () {
-            /* MOCK: Show Trigger Bottom Sheet */
-          },
-          icon: const Icon(Icons.add, color: AppTheme.royalViolet),
+          onPressed: () {},
+          icon: const Icon(Icons.add, color: AppTheme.logoBlue),
           label: const Text(
             'Add Trigger',
-            style: TextStyle(color: AppTheme.royalViolet),
+            style: TextStyle(color: AppTheme.logoBlue),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: AppTheme.logoBlue),
           ),
         ),
       ],
@@ -152,21 +189,24 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     return Column(
       children: [
         SwitchListTile(
-          title: const Text('Allow Favorite Contacts'),
+          title: const Text(
+            'Allow Favorite Contacts',
+            style: TextStyle(color: AppTheme.pureBlack),
+          ),
           value: true,
-          onChanged: (val) {
-            /* Mock Backend */
-          },
-          activeColor: AppTheme.royalViolet,
+          onChanged: (val) {},
         ),
         SwitchListTile(
-          title: const Text('Allow Repeat Callers'),
-          subtitle: const Text('If they call twice in 15 mins'),
+          title: const Text(
+            'Allow Repeat Callers',
+            style: TextStyle(color: AppTheme.pureBlack),
+          ),
+          subtitle: Text(
+            'If they call twice in 15 mins',
+            style: TextStyle(color: AppTheme.pureBlack.withOpacity(0.6)),
+          ),
           value: false,
-          onChanged: (val) {
-            /* Mock Backend */
-          },
-          activeColor: AppTheme.royalViolet,
+          onChanged: (val) {},
         ),
       ],
     );

@@ -11,33 +11,33 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Privacy Banner
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.electricBlue.withOpacity(0.1),
+              color: AppTheme.logoBlue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.logoBlue.withOpacity(0.2)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.lock_outline, color: AppTheme.electricBlue),
+                const Icon(Icons.lock_outline, color: AppTheme.logoBlue),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
+                    children: [
+                      const Text(
                         'Privacy First',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.deepIndigo,
+                          color: AppTheme.pureBlack,
                         ),
                       ),
                       Text(
                         'All your automation data is stored securely and locally on your device.',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.mutedText,
+                          color: AppTheme.pureBlack.withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -51,7 +51,7 @@ class SettingsScreen extends StatelessWidget {
             'Permissions',
             style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: AppTheme.primaryText,
+              color: AppTheme.pureBlack,
             ),
           ),
           const SizedBox(height: 8),
@@ -61,50 +61,35 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(
                     Icons.do_not_disturb_on,
-                    color: AppTheme.royalViolet,
+                    color: AppTheme.logoPurple,
                   ),
-                  title: const Text('DND Access'),
-                  trailing: const Icon(Icons.check_circle, color: Colors.green),
-                  onTap: () {
-                    /* Mock: Open settings */
-                  },
+                  title: const Text(
+                    'DND Access',
+                    style: TextStyle(color: AppTheme.pureBlack),
+                  ),
+                  trailing: const Icon(
+                    Icons.check_circle,
+                    color: AppTheme.logoCyan,
+                  ),
+                  onTap: () {},
                 ),
-                const Divider(height: 1),
+                Divider(height: 1, color: AppTheme.pureBlack.withOpacity(0.1)),
                 ListTile(
                   leading: const Icon(
                     Icons.location_on,
-                    color: AppTheme.royalViolet,
+                    color: AppTheme.logoPurple,
                   ),
-                  title: const Text('Location Services'),
-                  trailing: const Icon(Icons.check_circle, color: Colors.green),
-                  onTap: () {
-                    /* Mock: Open settings */
-                  },
+                  title: const Text(
+                    'Location Services',
+                    style: TextStyle(color: AppTheme.pureBlack),
+                  ),
+                  trailing: const Icon(
+                    Icons.check_circle,
+                    color: AppTheme.logoCyan,
+                  ),
+                  onTap: () {},
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Preferences',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppTheme.primaryText,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              leading: const Icon(
-                Icons.color_lens_outlined,
-                color: AppTheme.mutedText,
-              ),
-              title: const Text('App Theme'),
-              subtitle: const Text('Light Mode'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                /* Mock: Change theme */
-              },
             ),
           ),
         ],

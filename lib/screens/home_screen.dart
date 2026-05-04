@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-// import '../services/dnd_service.dart'; // Retain your existing service
-// import '../services/automation_manager.dart'; // Retain your existing service
+// import '../services/dnd_service.dart';
+// import '../services/automation_manager.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -30,38 +30,28 @@ class _HomeScreenState extends State<HomeScreen> {
           // Large Status Card
           Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: _isDndActive
-                    ? [AppTheme.royalViolet, AppTheme.deepIndigo]
-                    : [AppTheme.surfaceWhite, AppTheme.surfaceWhite],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              gradient: _isDndActive
+                  ? const LinearGradient(
+                      colors: [AppTheme.logoPurple, AppTheme.logoBlue],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              color: _isDndActive ? null : AppTheme.pureWhite,
               borderRadius: BorderRadius.circular(32),
               border: _isDndActive
                   ? null
-                  : Border.all(color: Colors.grey.shade300),
-              boxShadow: _isDndActive
-                  ? [
-                      BoxShadow(
-                        color: AppTheme.royalViolet.withOpacity(0.4),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ]
-                  : [],
+                  : Border.all(color: AppTheme.pureBlack.withOpacity(0.1)),
             ),
             padding: const EdgeInsets.all(32.0),
             child: Column(
               children: [
                 Icon(
                   _isDndActive
-                      ? Icons.do_not_disturb_on_rounded
-                      : Icons.do_not_disturb_off_rounded,
+                      ? Icons.notifications_off_rounded
+                      : Icons.notifications_active_rounded,
                   size: 64,
-                  color: _isDndActive
-                      ? AppTheme.surfaceWhite
-                      : AppTheme.deepIndigo,
+                  color: _isDndActive ? AppTheme.pureWhite : AppTheme.logoBlue,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -70,8 +60,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                     color: _isDndActive
-                        ? AppTheme.surfaceWhite
-                        : AppTheme.primaryText,
+                        ? AppTheme.pureWhite
+                        : AppTheme.pureBlack,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -80,55 +70,56 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     color: _isDndActive
-                        ? AppTheme.lavenderGlow
-                        : AppTheme.mutedText,
+                        ? AppTheme.pureWhite.withOpacity(0.8)
+                        : AppTheme.pureBlack.withOpacity(0.5),
                   ),
                 ),
                 const SizedBox(height: 32),
-                Switch(
-                  value: _isDndActive,
-                  onChanged: _toggleDnd,
-                  activeColor: AppTheme.surfaceWhite,
-                  activeTrackColor: AppTheme.softCyan,
-                ),
+                Switch(value: _isDndActive, onChanged: _toggleDnd),
               ],
             ),
           ),
           const SizedBox(height: 32),
 
-          Text(
+          const Text(
             'Smart Suggestions',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: AppTheme.primaryText,
+              color: AppTheme.pureBlack,
             ),
           ),
           const SizedBox(height: 12),
 
-          // Suggestion Card
           Card(
             child: ListTile(
               contentPadding: const EdgeInsets.all(16),
               leading: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppTheme.lavenderGlow.withOpacity(0.3),
+                  color: AppTheme.logoCyan.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.nightlight_round,
-                  color: AppTheme.royalViolet,
+                  color: AppTheme.logoCyan,
                 ),
               ),
-              title: const Text('Sleep Schedule'),
-              subtitle: const Text(
+              title: const Text(
+                'Sleep Schedule',
+                style: TextStyle(
+                  color: AppTheme.pureBlack,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              subtitle: Text(
                 'Silence notifications from 11 PM to 7 AM every day.',
+                style: TextStyle(color: AppTheme.pureBlack.withOpacity(0.6)),
               ),
               trailing: IconButton(
                 icon: const Icon(
                   Icons.add_circle_outline,
-                  color: AppTheme.electricBlue,
+                  color: AppTheme.logoBlue,
                 ),
                 onPressed: () {
                   // MOCKED: Add suggestion to rules
