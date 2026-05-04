@@ -58,3 +58,5 @@ LazyDatabase _openConnection() {
     return NativeDatabase(file);
   });
 }
+
+final database = AppDatabase();

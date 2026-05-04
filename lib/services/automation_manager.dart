@@ -154,3 +154,5 @@ class AutomationManager {
     }
   }
 }
+
+final automationManager = AutomationManager();

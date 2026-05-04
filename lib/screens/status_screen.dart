@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../main.dart'; // Allows access to the global automationManager
 import '../database/database.dart'; // Allows access to the Rule model
 import 'package:flutter/services.dart';
+import '../services/automation_manager.dart';
 
 class StatusScreen extends StatefulWidget {
   const StatusScreen({super.key});
