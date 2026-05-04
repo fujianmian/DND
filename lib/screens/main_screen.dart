@@ -1,43 +1,57 @@
-// lib/screens/main_screen.dart
 import 'package:flutter/material.dart';
+import 'home_screen.dart';
 import 'rule_list_screen.dart';
-import 'status_screen.dart'; // We will create a placeholder for this
+import 'insights_screen.dart';
+import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({Key? key}) : super(key: key);
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  _MainScreenState createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  // The screens for our bottom navigation tabs
-  final List<Widget> _screens = [const RuleListScreen(), const StatusScreen()];
+  final List<Widget> _screens = [
+    const HomeScreen(),
+    const RuleListScreen(),
+    const InsightsScreen(),
+    const SettingsScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
-      // NavigationBar is the modern Material 3 replacement for BottomNavigationBar
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (int index) {
+        onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
           });
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.rule_folder_outlined),
-            selectedIcon: Icon(Icons.rule_folder),
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.rule_outlined),
+            selectedIcon: Icon(Icons.rule_rounded),
             label: 'Rules',
           ),
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Status',
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights_rounded),
+            label: 'Insights',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
+            label: 'Settings',
           ),
         ],
       ),
