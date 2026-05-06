@@ -327,7 +327,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             ),
             const SizedBox(height: 20),
             DropdownButtonFormField<model.TriggerType>(
-              initialValue: _selectedType,
+              value: _selectedType,
               decoration: const InputDecoration(labelText: 'Trigger Type'),
               items: model.TriggerType.values
                   .map(
