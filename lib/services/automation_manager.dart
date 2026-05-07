@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 import '../database/database.dart';
 import '../main.dart';
@@ -37,8 +36,8 @@ class AutomationManager {
 
       List<Map<String, dynamic>> timeRulesMap = [];
       List<Map<String, dynamic>> locRulesMap = [];
-      List<String> appPackagesList = [];
-      List<String> activityTypesList = [];
+      List<Map<String, dynamic>> appRulesMap = [];
+      List<Map<String, dynamic>> activityRulesMap = [];
 
       for (var rule in activeRules) {
         if (rule.type == 0 && rule.startTime != null && rule.endTime != null) {
@@ -46,10 +45,14 @@ class AutomationManager {
           final end = _parseTimeString(rule.endTime!);
           if (start != null && end != null) {
             timeRulesMap.add({
+              'id': rule.id.toString(),
+              'name': rule.name,
               'startHour': start.hour,
               'startMinute': start.minute,
               'endHour': end.hour,
               'endMinute': end.minute,
+              'allowStarredContacts': rule.allowStarredContacts,
+              'allowRepeatCallers': rule.allowRepeatCallers,
             });
           }
         } else if (rule.type == 1 &&
@@ -58,15 +61,30 @@ class AutomationManager {
             rule.radius != null) {
           locRulesMap.add({
             'id': rule.id.toString(),
+            'name': rule.name,
             'lat': rule.latitude!,
             'lng': rule.longitude!,
             'rad': rule.radius!,
+            'allowStarredContacts': rule.allowStarredContacts,
+            'allowRepeatCallers': rule.allowRepeatCallers,
           });
         } else if (rule.type == 2 && rule.packageName != null) {
           // 🔹 FIX 2: Collect the App Packages
-          appPackagesList.add(rule.packageName!);
+          appRulesMap.add({
+            'id': rule.id.toString(),
+            'name': rule.name,
+            'packageName': rule.packageName!,
+            'allowStarredContacts': rule.allowStarredContacts,
+            'allowRepeatCallers': rule.allowRepeatCallers,
+          });
         } else if (rule.type == 3 && rule.activityType != null) {
-          activityTypesList.add(rule.activityType!);
+          activityRulesMap.add({
+            'id': rule.id.toString(),
+            'name': rule.name,
+            'activityType': rule.activityType!,
+            'allowStarredContacts': rule.allowStarredContacts,
+            'allowRepeatCallers': rule.allowRepeatCallers,
+          });
         }
       }
 
@@ -74,8 +92,8 @@ class AutomationManager {
       await DndService.syncRulesToService(
         timeRulesMap,
         locRulesMap,
-        appPackagesList,
-        activityTypesList,
+        appRulesMap,
+        activityRulesMap,
       );
 
       // Update UI immediately after syncing

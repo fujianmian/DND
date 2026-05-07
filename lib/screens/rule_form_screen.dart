@@ -3,6 +3,7 @@ import 'package:drift/drift.dart' as d;
 import '../database/database.dart';
 // Use a prefix to prevent the "Rule" name collision error
 import '../models/rule.dart' as model;
+import '../models/rule_trigger_values.dart';
 import '../main.dart'; // Access global 'database'
 import 'map_picker_screen.dart'; // Make sure this matches your map screen file name
 import 'package:flutter/services.dart';
@@ -50,6 +51,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
   List<Map<String, dynamic>> _installedApps = [];
   bool _isLoadingApps = false;
+  bool _allowStarredContacts = false;
+  bool _allowRepeatCallers = false;
 
   void _showPermissionDialog(
     String title,
@@ -168,6 +171,9 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (widget.rule?.activityType != null) {
       _activityType = widget.rule!.activityType;
     }
+
+    _allowStarredContacts = widget.rule?.allowStarredContacts ?? false;
+    _allowRepeatCallers = widget.rule?.allowRepeatCallers ?? false;
   }
 
   Future<void> _fetchInstalledApps() async {
@@ -210,57 +216,102 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   }
 
   Future<void> _saveRule() async {
-    if (_formKey.currentState!.validate()) {
-      final name = _nameController.text;
-
-      final typeInt = _selectedType == model.TriggerType.time
-          ? 0
-          : (_selectedType == model.TriggerType.location
-                ? 1
-                : (_selectedType == model.TriggerType.app ? 2 : 3));
-
-      // Formatting time to string for database storage
-      final startTimeStr = _startTime?.format(context);
-      final endTimeStr = _endTime?.format(context);
-
-      if (widget.rule == null) {
-        // CREATE NEW RULE
-        await database.insertRule(
-          RulesCompanion.insert(
-            name: name,
-            type: typeInt,
-            isEnabled: const d.Value(true),
-            startTime: d.Value(startTimeStr),
-            endTime: d.Value(endTimeStr),
-            latitude: d.Value(_latitude),
-            longitude: d.Value(_longitude),
-            radius: d.Value(_radius),
-            packageName: d.Value(_packageName),
-            activityType: d.Value(_activityType),
-          ),
-        );
-      } else {
-        // UPDATE EXISTING RULE
-        await database.updateRule(
-          widget.rule!.copyWith(
-            name: name,
-            type: typeInt,
-            startTime: d.Value(startTimeStr),
-            endTime: d.Value(endTimeStr),
-            latitude: d.Value(_latitude),
-            longitude: d.Value(_longitude),
-            radius: d.Value(_radius),
-            packageName: d.Value(_packageName),
-            activityType: d.Value(_activityType),
-          ),
-        );
+    final triggerError = _triggerValidationError();
+    if (!_formKey.currentState!.validate() || triggerError != null) {
+      if (triggerError != null) {
+        _showSnackBar(triggerError);
       }
-
-      // 🔴 FIX: Tell the Android Service the rules have changed!
-      await automationManager.syncRulesToAndroid();
-
-      if (mounted) Navigator.pop(context);
+      return;
     }
+
+    final name = _nameController.text.trim();
+
+    final triggerValues = cleanedRuleTriggerValues(
+      triggerType: _selectedType,
+      startTime: _startTime?.format(context),
+      endTime: _endTime?.format(context),
+      latitude: _latitude,
+      longitude: _longitude,
+      radius: _radius,
+      packageName: _packageName,
+      activityType: _activityType,
+    );
+
+    if (widget.rule == null) {
+      // CREATE NEW RULE
+      await database.insertRule(
+        RulesCompanion.insert(
+          name: name,
+          type: triggerValues.type,
+          isEnabled: const d.Value(true),
+          startTime: triggerValues.startTime,
+          endTime: triggerValues.endTime,
+          latitude: triggerValues.latitude,
+          longitude: triggerValues.longitude,
+          radius: triggerValues.radius,
+          packageName: triggerValues.packageName,
+          activityType: triggerValues.activityType,
+          allowStarredContacts: d.Value(_allowStarredContacts),
+          allowRepeatCallers: d.Value(_allowRepeatCallers),
+        ),
+      );
+    } else {
+      // UPDATE EXISTING RULE
+      await database.updateRule(
+        widget.rule!.copyWith(
+          name: name,
+          type: triggerValues.type,
+          startTime: triggerValues.startTime,
+          endTime: triggerValues.endTime,
+          latitude: triggerValues.latitude,
+          longitude: triggerValues.longitude,
+          radius: triggerValues.radius,
+          packageName: triggerValues.packageName,
+          activityType: triggerValues.activityType,
+          allowStarredContacts: _allowStarredContacts,
+          allowRepeatCallers: _allowRepeatCallers,
+        ),
+      );
+    }
+
+    // 🔴 FIX: Tell the Android Service the rules have changed!
+    await automationManager.syncRulesToAndroid();
+
+    if (mounted) Navigator.pop(context);
+  }
+
+  String? _triggerValidationError() {
+    switch (_selectedType) {
+      case model.TriggerType.time:
+        if (_startTime == null || _endTime == null) {
+          return 'Please select start and end times.';
+        }
+        return null;
+      case model.TriggerType.location:
+        if (_latitude == null || _longitude == null || _radius == null) {
+          return 'Please select a location and radius.';
+        }
+        if (_radius! <= 0) {
+          return 'Please select a radius greater than 0.';
+        }
+        return null;
+      case model.TriggerType.app:
+        if (_packageName == null || _packageName!.trim().isEmpty) {
+          return 'Please select an application.';
+        }
+        return null;
+      case model.TriggerType.activity:
+        if (_activityType == null || _activityType!.isEmpty) {
+          return 'Please select an activity.';
+        }
+        return null;
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _deleteRule() async {
@@ -396,7 +447,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                       ListTile(
                         leading: const Icon(Icons.map, color: Colors.blue),
                         title: Text(
-                          _latitude == null
+                          _latitude == null || _longitude == null
                               ? 'Tap to select a location'
                               : 'Lat: ${_latitude!.toStringAsFixed(4)}, Lng: ${_longitude!.toStringAsFixed(4)}',
                         ),
@@ -504,6 +555,9 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               ),
             ],
 
+            const SizedBox(height: 24),
+            _buildExceptionControls(),
+
             const SizedBox(height: 40),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -515,6 +569,39 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildExceptionControls() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Exceptions", style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(
+          "These exceptions will apply when this rule activates Do Not Disturb.",
+          style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              SwitchListTile(
+                title: const Text("Allow starred contacts"),
+                value: _allowStarredContacts,
+                onChanged: (val) => setState(() => _allowStarredContacts = val),
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                title: const Text("Allow repeat callers"),
+                subtitle: const Text("If they call twice in 15 mins"),
+                value: _allowRepeatCallers,
+                onChanged: (val) => setState(() => _allowRepeatCallers = val),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

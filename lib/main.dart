@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
+import 'database/database.dart';
+import 'services/automation_manager.dart';
 import 'theme/app_theme.dart';
 import 'screens/main_screen.dart';
 
+final database = AppDatabase();
+final automationManager = AutomationManager();
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  automationManager.start();
   runApp(const QuietlyApp());
 }
 
 class QuietlyApp extends StatelessWidget {
-  const QuietlyApp({Key? key}) : super(key: key);
+  const QuietlyApp({super.key});
 
   @override
   Widget build(BuildContext context) {

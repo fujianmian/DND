@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.ArrayList
 import android.graphics.Bitmap
@@ -22,6 +23,11 @@ import java.io.ByteArrayOutputStream
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.example.dnd_auto_app/dnd"
+
+    private fun booleanArrayArg(call: MethodCall, name: String): BooleanArray {
+        val values = call.argument<ArrayList<Boolean>>(name) ?: return booleanArrayOf()
+        return BooleanArray(values.size) { index -> values[index] }
+    }
 
     private fun getIconBytes(pm: PackageManager, packageName: String): ByteArray? {
         return try {
@@ -163,18 +169,33 @@ class MainActivity: FlutterActivity() {
                     val startMinutes = call.argument<ArrayList<Int>>("startMinutes")?.toIntArray() ?: intArrayOf()
                     val endHours = call.argument<ArrayList<Int>>("endHours")?.toIntArray() ?: intArrayOf()
                     val endMinutes = call.argument<ArrayList<Int>>("endMinutes")?.toIntArray() ?: intArrayOf()
+                    val timeRuleIds = call.argument<ArrayList<String>>("timeRuleIds")?.toTypedArray() ?: emptyArray()
+                    val timeRuleNames = call.argument<ArrayList<String>>("timeRuleNames")?.toTypedArray() ?: emptyArray()
+                    val timeAllowStarredContacts = booleanArrayArg(call, "timeAllowStarredContacts")
+                    val timeAllowRepeatCallers = booleanArrayArg(call, "timeAllowRepeatCallers")
 
                     // 2. Extract Location Rules directly from the arguments
                     val locIds = call.argument<ArrayList<String>>("locIds")?.toTypedArray() ?: emptyArray()
+                    val locNames = call.argument<ArrayList<String>>("locNames")?.toTypedArray() ?: emptyArray()
                     val lats = call.argument<ArrayList<Double>>("lats")?.toDoubleArray() ?: doubleArrayOf()
                     val lngs = call.argument<ArrayList<Double>>("lngs")?.toDoubleArray() ?: doubleArrayOf()
                     val rads = call.argument<ArrayList<Int>>("rads")?.toIntArray() ?: intArrayOf()
+                    val locAllowStarredContacts = booleanArrayArg(call, "locAllowStarredContacts")
+                    val locAllowRepeatCallers = booleanArrayArg(call, "locAllowRepeatCallers")
 
                     // 3. Extract App Rules
+                    val appRuleIds = call.argument<ArrayList<String>>("appRuleIds")?.toTypedArray() ?: emptyArray()
+                    val appRuleNames = call.argument<ArrayList<String>>("appRuleNames")?.toTypedArray() ?: emptyArray()
                     val appPackages = call.argument<ArrayList<String>>("appPackages")?.toTypedArray() ?: emptyArray()
+                    val appAllowStarredContacts = booleanArrayArg(call, "appAllowStarredContacts")
+                    val appAllowRepeatCallers = booleanArrayArg(call, "appAllowRepeatCallers")
 
                     // 4. Extract Activity Rules
+                    val activityRuleIds = call.argument<ArrayList<String>>("activityRuleIds")?.toTypedArray() ?: emptyArray()
+                    val activityRuleNames = call.argument<ArrayList<String>>("activityRuleNames")?.toTypedArray() ?: emptyArray()
                     val activityTypes = call.argument<ArrayList<String>>("activityTypes")?.toTypedArray() ?: emptyArray()   
+                    val activityAllowStarredContacts = booleanArrayArg(call, "activityAllowStarredContacts")
+                    val activityAllowRepeatCallers = booleanArrayArg(call, "activityAllowRepeatCallers")
 
                     // Pass ALL rules to the Foreground Service
                     val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
@@ -182,15 +203,30 @@ class MainActivity: FlutterActivity() {
                         putExtra("startMinutes", startMinutes)
                         putExtra("endHours", endHours)
                         putExtra("endMinutes", endMinutes)
+                        putExtra("timeRuleIds", timeRuleIds)
+                        putExtra("timeRuleNames", timeRuleNames)
+                        putExtra("timeAllowStarredContacts", timeAllowStarredContacts)
+                        putExtra("timeAllowRepeatCallers", timeAllowRepeatCallers)
                         
                         putExtra("locIds", locIds)
+                        putExtra("locNames", locNames)
                         putExtra("lats", lats)
                         putExtra("lngs", lngs)
                         putExtra("rads", rads)
+                        putExtra("locAllowStarredContacts", locAllowStarredContacts)
+                        putExtra("locAllowRepeatCallers", locAllowRepeatCallers)
 
+                        putExtra("appRuleIds", appRuleIds)
+                        putExtra("appRuleNames", appRuleNames)
                         putExtra("appPackages", appPackages)
+                        putExtra("appAllowStarredContacts", appAllowStarredContacts)
+                        putExtra("appAllowRepeatCallers", appAllowRepeatCallers)
 
+                        putExtra("activityRuleIds", activityRuleIds)
+                        putExtra("activityRuleNames", activityRuleNames)
                         putExtra("activityTypes", activityTypes)
+                        putExtra("activityAllowStarredContacts", activityAllowStarredContacts)
+                        putExtra("activityAllowRepeatCallers", activityAllowRepeatCallers)
                     }
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && call.method == "startService") {

@@ -133,6 +133,34 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _allowStarredContactsMeta =
+      const VerificationMeta('allowStarredContacts');
+  @override
+  late final GeneratedColumn<bool> allowStarredContacts = GeneratedColumn<bool>(
+    'allow_starred_contacts',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("allow_starred_contacts" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _allowRepeatCallersMeta =
+      const VerificationMeta('allowRepeatCallers');
+  @override
+  late final GeneratedColumn<bool> allowRepeatCallers = GeneratedColumn<bool>(
+    'allow_repeat_callers',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("allow_repeat_callers" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -146,6 +174,8 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     radius,
     packageName,
     activityType,
+    allowStarredContacts,
+    allowRepeatCallers,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -232,6 +262,24 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         ),
       );
     }
+    if (data.containsKey('allow_starred_contacts')) {
+      context.handle(
+        _allowStarredContactsMeta,
+        allowStarredContacts.isAcceptableOrUnknown(
+          data['allow_starred_contacts']!,
+          _allowStarredContactsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('allow_repeat_callers')) {
+      context.handle(
+        _allowRepeatCallersMeta,
+        allowRepeatCallers.isAcceptableOrUnknown(
+          data['allow_repeat_callers']!,
+          _allowRepeatCallersMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -285,6 +333,14 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         DriftSqlType.string,
         data['${effectivePrefix}activity_type'],
       ),
+      allowStarredContacts: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}allow_starred_contacts'],
+      )!,
+      allowRepeatCallers: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}allow_repeat_callers'],
+      )!,
     );
   }
 
@@ -306,6 +362,8 @@ class Rule extends DataClass implements Insertable<Rule> {
   final int? radius;
   final String? packageName;
   final String? activityType;
+  final bool allowStarredContacts;
+  final bool allowRepeatCallers;
   const Rule({
     required this.id,
     required this.name,
@@ -318,6 +376,8 @@ class Rule extends DataClass implements Insertable<Rule> {
     this.radius,
     this.packageName,
     this.activityType,
+    required this.allowStarredContacts,
+    required this.allowRepeatCallers,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -347,6 +407,8 @@ class Rule extends DataClass implements Insertable<Rule> {
     if (!nullToAbsent || activityType != null) {
       map['activity_type'] = Variable<String>(activityType);
     }
+    map['allow_starred_contacts'] = Variable<bool>(allowStarredContacts);
+    map['allow_repeat_callers'] = Variable<bool>(allowRepeatCallers);
     return map;
   }
 
@@ -377,6 +439,8 @@ class Rule extends DataClass implements Insertable<Rule> {
       activityType: activityType == null && nullToAbsent
           ? const Value.absent()
           : Value(activityType),
+      allowStarredContacts: Value(allowStarredContacts),
+      allowRepeatCallers: Value(allowRepeatCallers),
     );
   }
 
@@ -397,6 +461,10 @@ class Rule extends DataClass implements Insertable<Rule> {
       radius: serializer.fromJson<int?>(json['radius']),
       packageName: serializer.fromJson<String?>(json['packageName']),
       activityType: serializer.fromJson<String?>(json['activityType']),
+      allowStarredContacts: serializer.fromJson<bool>(
+        json['allowStarredContacts'],
+      ),
+      allowRepeatCallers: serializer.fromJson<bool>(json['allowRepeatCallers']),
     );
   }
   @override
@@ -414,6 +482,8 @@ class Rule extends DataClass implements Insertable<Rule> {
       'radius': serializer.toJson<int?>(radius),
       'packageName': serializer.toJson<String?>(packageName),
       'activityType': serializer.toJson<String?>(activityType),
+      'allowStarredContacts': serializer.toJson<bool>(allowStarredContacts),
+      'allowRepeatCallers': serializer.toJson<bool>(allowRepeatCallers),
     };
   }
 
@@ -429,6 +499,8 @@ class Rule extends DataClass implements Insertable<Rule> {
     Value<int?> radius = const Value.absent(),
     Value<String?> packageName = const Value.absent(),
     Value<String?> activityType = const Value.absent(),
+    bool? allowStarredContacts,
+    bool? allowRepeatCallers,
   }) => Rule(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -441,6 +513,8 @@ class Rule extends DataClass implements Insertable<Rule> {
     radius: radius.present ? radius.value : this.radius,
     packageName: packageName.present ? packageName.value : this.packageName,
     activityType: activityType.present ? activityType.value : this.activityType,
+    allowStarredContacts: allowStarredContacts ?? this.allowStarredContacts,
+    allowRepeatCallers: allowRepeatCallers ?? this.allowRepeatCallers,
   );
   Rule copyWithCompanion(RulesCompanion data) {
     return Rule(
@@ -459,6 +533,12 @@ class Rule extends DataClass implements Insertable<Rule> {
       activityType: data.activityType.present
           ? data.activityType.value
           : this.activityType,
+      allowStarredContacts: data.allowStarredContacts.present
+          ? data.allowStarredContacts.value
+          : this.allowStarredContacts,
+      allowRepeatCallers: data.allowRepeatCallers.present
+          ? data.allowRepeatCallers.value
+          : this.allowRepeatCallers,
     );
   }
 
@@ -475,7 +555,9 @@ class Rule extends DataClass implements Insertable<Rule> {
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
           ..write('packageName: $packageName, ')
-          ..write('activityType: $activityType')
+          ..write('activityType: $activityType, ')
+          ..write('allowStarredContacts: $allowStarredContacts, ')
+          ..write('allowRepeatCallers: $allowRepeatCallers')
           ..write(')'))
         .toString();
   }
@@ -493,6 +575,8 @@ class Rule extends DataClass implements Insertable<Rule> {
     radius,
     packageName,
     activityType,
+    allowStarredContacts,
+    allowRepeatCallers,
   );
   @override
   bool operator ==(Object other) =>
@@ -508,7 +592,9 @@ class Rule extends DataClass implements Insertable<Rule> {
           other.longitude == this.longitude &&
           other.radius == this.radius &&
           other.packageName == this.packageName &&
-          other.activityType == this.activityType);
+          other.activityType == this.activityType &&
+          other.allowStarredContacts == this.allowStarredContacts &&
+          other.allowRepeatCallers == this.allowRepeatCallers);
 }
 
 class RulesCompanion extends UpdateCompanion<Rule> {
@@ -523,6 +609,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
   final Value<int?> radius;
   final Value<String?> packageName;
   final Value<String?> activityType;
+  final Value<bool> allowStarredContacts;
+  final Value<bool> allowRepeatCallers;
   const RulesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -535,6 +623,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.radius = const Value.absent(),
     this.packageName = const Value.absent(),
     this.activityType = const Value.absent(),
+    this.allowStarredContacts = const Value.absent(),
+    this.allowRepeatCallers = const Value.absent(),
   });
   RulesCompanion.insert({
     this.id = const Value.absent(),
@@ -548,6 +638,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.radius = const Value.absent(),
     this.packageName = const Value.absent(),
     this.activityType = const Value.absent(),
+    this.allowStarredContacts = const Value.absent(),
+    this.allowRepeatCallers = const Value.absent(),
   }) : name = Value(name),
        type = Value(type);
   static Insertable<Rule> custom({
@@ -562,6 +654,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Expression<int>? radius,
     Expression<String>? packageName,
     Expression<String>? activityType,
+    Expression<bool>? allowStarredContacts,
+    Expression<bool>? allowRepeatCallers,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -575,6 +669,10 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       if (radius != null) 'radius': radius,
       if (packageName != null) 'package_name': packageName,
       if (activityType != null) 'activity_type': activityType,
+      if (allowStarredContacts != null)
+        'allow_starred_contacts': allowStarredContacts,
+      if (allowRepeatCallers != null)
+        'allow_repeat_callers': allowRepeatCallers,
     });
   }
 
@@ -590,6 +688,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Value<int?>? radius,
     Value<String?>? packageName,
     Value<String?>? activityType,
+    Value<bool>? allowStarredContacts,
+    Value<bool>? allowRepeatCallers,
   }) {
     return RulesCompanion(
       id: id ?? this.id,
@@ -603,6 +703,8 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       radius: radius ?? this.radius,
       packageName: packageName ?? this.packageName,
       activityType: activityType ?? this.activityType,
+      allowStarredContacts: allowStarredContacts ?? this.allowStarredContacts,
+      allowRepeatCallers: allowRepeatCallers ?? this.allowRepeatCallers,
     );
   }
 
@@ -642,6 +744,14 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     if (activityType.present) {
       map['activity_type'] = Variable<String>(activityType.value);
     }
+    if (allowStarredContacts.present) {
+      map['allow_starred_contacts'] = Variable<bool>(
+        allowStarredContacts.value,
+      );
+    }
+    if (allowRepeatCallers.present) {
+      map['allow_repeat_callers'] = Variable<bool>(allowRepeatCallers.value);
+    }
     return map;
   }
 
@@ -658,7 +768,9 @@ class RulesCompanion extends UpdateCompanion<Rule> {
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
           ..write('packageName: $packageName, ')
-          ..write('activityType: $activityType')
+          ..write('activityType: $activityType, ')
+          ..write('allowStarredContacts: $allowStarredContacts, ')
+          ..write('allowRepeatCallers: $allowRepeatCallers')
           ..write(')'))
         .toString();
   }
@@ -688,6 +800,8 @@ typedef $$RulesTableCreateCompanionBuilder =
       Value<int?> radius,
       Value<String?> packageName,
       Value<String?> activityType,
+      Value<bool> allowStarredContacts,
+      Value<bool> allowRepeatCallers,
     });
 typedef $$RulesTableUpdateCompanionBuilder =
     RulesCompanion Function({
@@ -702,6 +816,8 @@ typedef $$RulesTableUpdateCompanionBuilder =
       Value<int?> radius,
       Value<String?> packageName,
       Value<String?> activityType,
+      Value<bool> allowStarredContacts,
+      Value<bool> allowRepeatCallers,
     });
 
 class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
@@ -764,6 +880,16 @@ class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
 
   ColumnFilters<String> get activityType => $composableBuilder(
     column: $table.activityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get allowStarredContacts => $composableBuilder(
+    column: $table.allowStarredContacts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get allowRepeatCallers => $composableBuilder(
+    column: $table.allowRepeatCallers,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -831,6 +957,16 @@ class $$RulesTableOrderingComposer
     column: $table.activityType,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get allowStarredContacts => $composableBuilder(
+    column: $table.allowStarredContacts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get allowRepeatCallers => $composableBuilder(
+    column: $table.allowRepeatCallers,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RulesTableAnnotationComposer
@@ -878,6 +1014,16 @@ class $$RulesTableAnnotationComposer
     column: $table.activityType,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get allowStarredContacts => $composableBuilder(
+    column: $table.allowStarredContacts,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get allowRepeatCallers => $composableBuilder(
+    column: $table.allowRepeatCallers,
+    builder: (column) => column,
+  );
 }
 
 class $$RulesTableTableManager
@@ -919,6 +1065,8 @@ class $$RulesTableTableManager
                 Value<int?> radius = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
+                Value<bool> allowStarredContacts = const Value.absent(),
+                Value<bool> allowRepeatCallers = const Value.absent(),
               }) => RulesCompanion(
                 id: id,
                 name: name,
@@ -931,6 +1079,8 @@ class $$RulesTableTableManager
                 radius: radius,
                 packageName: packageName,
                 activityType: activityType,
+                allowStarredContacts: allowStarredContacts,
+                allowRepeatCallers: allowRepeatCallers,
               ),
           createCompanionCallback:
               ({
@@ -945,6 +1095,8 @@ class $$RulesTableTableManager
                 Value<int?> radius = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
+                Value<bool> allowStarredContacts = const Value.absent(),
+                Value<bool> allowRepeatCallers = const Value.absent(),
               }) => RulesCompanion.insert(
                 id: id,
                 name: name,
@@ -957,6 +1109,8 @@ class $$RulesTableTableManager
                 radius: radius,
                 packageName: packageName,
                 activityType: activityType,
+                allowStarredContacts: allowStarredContacts,
+                allowRepeatCallers: allowRepeatCallers,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

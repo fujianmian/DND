@@ -1,17 +1,16 @@
 package com.example.dnd_auto_app
 
-import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log // 🔹 Added for debugging
+import android.util.Log
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val geofencingEvent = GeofencingEvent.fromIntent(intent)
-        
+
         if (geofencingEvent == null) {
             Log.e("DndGeofence", "Receiver triggered but event is null")
             return
@@ -23,34 +22,29 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         }
 
         val transition = geofencingEvent.geofenceTransition
-        Log.d("DndGeofence", "🚀 GEOFENCE TRANSITION FIRED: Type $transition")
-
+        val triggeredIds = geofencingEvent.triggeringGeofences?.map { it.requestId } ?: emptyList()
         val prefs = context.getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val activeGeofenceIds = prefs.getStringSet("activeGeofenceIds", emptySet<String>())?.toMutableSet()
+            ?: mutableSetOf()
+
+        Log.d("DndGeofence", "Geofence transition $transition for ids: ${triggeredIds.joinToString()}")
 
         if (transition == Geofence.GEOFENCE_TRANSITION_ENTER) {
-            Log.d("DndGeofence", "📍 ENTER event received. Turning DND ON.")
-            // 1. Save state persistently
-            prefs.edit().putBoolean("isInsideGeofence", true).apply()
-            
-            // 2. Turn on DND immediately
-            if (notificationManager.isNotificationPolicyAccessGranted) {
-                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-                Log.d("DndGeofence", "✅ DND Successfully turned ON")
-            } else {
-                Log.e("DndGeofence", "❌ DND Permission missing!")
-            }
-            
+            activeGeofenceIds.addAll(triggeredIds)
         } else if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
-            Log.d("DndGeofence", "🚶 EXIT event received. Pinging service to turn DND OFF.")
-            // 1. Save state persistently
-            prefs.edit().putBoolean("isInsideGeofence", false).apply()
-            
-            // 2. Ping service to evaluate using an EXPLICIT intent
-            val pingIntent = Intent(DndForegroundService.ACTION_EVALUATE_DND).apply {
-                setPackage(context.packageName) 
-            }
-            context.sendBroadcast(pingIntent)
+            activeGeofenceIds.removeAll(triggeredIds.toSet())
+        } else {
+            return
         }
+
+        prefs.edit()
+            .putBoolean("isInsideGeofence", activeGeofenceIds.isNotEmpty())
+            .putStringSet("activeGeofenceIds", activeGeofenceIds)
+            .apply()
+
+        val pingIntent = Intent(DndForegroundService.ACTION_EVALUATE_DND).apply {
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(pingIntent)
     }
 }

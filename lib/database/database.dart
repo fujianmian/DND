@@ -27,6 +27,12 @@ class Rules extends Table {
   TextColumn get packageName => text().nullable()();
 
   TextColumn get activityType => text().nullable()();
+
+  // DND exception settings
+  BoolColumn get allowStarredContacts =>
+      boolean().withDefault(const Constant(false))();
+  BoolColumn get allowRepeatCallers =>
+      boolean().withDefault(const Constant(false))();
 }
 
 // 2. The Database Class
@@ -35,7 +41,17 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(rules, rules.allowStarredContacts);
+        await m.addColumn(rules, rules.allowRepeatCallers);
+      }
+    },
+  );
 
   // Simple Queries for MVP
   // 1. CREATE: Insert a new rule

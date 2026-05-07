@@ -1,5 +1,5 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 class DndService {
   static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
@@ -38,7 +38,7 @@ class DndService {
     }
   }
 
-  // --- NEW: Usage Stats Permissions ---
+  // --- Usage Stats Permissions ---
   static Future<bool> isUsagePermissionGranted() async {
     try {
       final bool result = await platform.invokeMethod('checkUsagePermission');
@@ -56,7 +56,7 @@ class DndService {
     }
   }
 
-  // --- NEW: Fetch Individual App Details (Name & Icon) ---
+  // --- Fetch Individual App Details (Name & Icon) ---
   static Future<Map<String, dynamic>?> getAppInfo(String packageName) async {
     try {
       final result = await platform.invokeMethod('getAppInfo', {
@@ -78,42 +78,91 @@ class DndService {
   static Future<void> syncRulesToService(
     List<Map<String, dynamic>> timeRules,
     List<Map<String, dynamic>> locRules,
-    List<String> appPackages, // 🔹 NEW: Add App Packages
-    List<String> activityTypes, // 🔹 NEW: Add Activity Types
+    List<Map<String, dynamic>> appRules,
+    List<Map<String, dynamic>> activityRules,
   ) async {
     try {
-      List<int> startHours = timeRules
-          .map((e) => e['startHour'] as int)
-          .toList();
-      List<int> startMinutes = timeRules
+      final timeRuleIds = timeRules.map((e) => e['id'] as String).toList();
+      final timeRuleNames = timeRules.map((e) => e['name'] as String).toList();
+      final startHours = timeRules.map((e) => e['startHour'] as int).toList();
+      final startMinutes = timeRules
           .map((e) => e['startMinute'] as int)
           .toList();
-      List<int> endHours = timeRules.map((e) => e['endHour'] as int).toList();
-      List<int> endMinutes = timeRules
-          .map((e) => e['endMinute'] as int)
+      final endHours = timeRules.map((e) => e['endHour'] as int).toList();
+      final endMinutes = timeRules.map((e) => e['endMinute'] as int).toList();
+      final timeAllowStarredContacts = timeRules
+          .map((e) => e['allowStarredContacts'] as bool)
+          .toList();
+      final timeAllowRepeatCallers = timeRules
+          .map((e) => e['allowRepeatCallers'] as bool)
           .toList();
 
-      List<String> locIds = locRules.map((e) => e['id'] as String).toList();
-      List<double> lats = locRules.map((e) => e['lat'] as double).toList();
-      List<double> lngs = locRules.map((e) => e['lng'] as double).toList();
-      List<int> rads = locRules.map((e) => e['rad'] as int).toList();
+      final locIds = locRules.map((e) => e['id'] as String).toList();
+      final locNames = locRules.map((e) => e['name'] as String).toList();
+      final lats = locRules.map((e) => e['lat'] as double).toList();
+      final lngs = locRules.map((e) => e['lng'] as double).toList();
+      final rads = locRules.map((e) => e['rad'] as int).toList();
+      final locAllowStarredContacts = locRules
+          .map((e) => e['allowStarredContacts'] as bool)
+          .toList();
+      final locAllowRepeatCallers = locRules
+          .map((e) => e['allowRepeatCallers'] as bool)
+          .toList();
+
+      final appRuleIds = appRules.map((e) => e['id'] as String).toList();
+      final appRuleNames = appRules.map((e) => e['name'] as String).toList();
+      final appPackages = appRules
+          .map((e) => e['packageName'] as String)
+          .toList();
+      final appAllowStarredContacts = appRules
+          .map((e) => e['allowStarredContacts'] as bool)
+          .toList();
+      final appAllowRepeatCallers = appRules
+          .map((e) => e['allowRepeatCallers'] as bool)
+          .toList();
+
+      final activityRuleIds = activityRules
+          .map((e) => e['id'] as String)
+          .toList();
+      final activityRuleNames = activityRules
+          .map((e) => e['name'] as String)
+          .toList();
+      final activityTypes = activityRules
+          .map((e) => e['activityType'] as String)
+          .toList();
+      final activityAllowStarredContacts = activityRules
+          .map((e) => e['allowStarredContacts'] as bool)
+          .toList();
+      final activityAllowRepeatCallers = activityRules
+          .map((e) => e['allowRepeatCallers'] as bool)
+          .toList();
 
       await platform.invokeMethod('startService', {
+        'timeRuleIds': timeRuleIds,
+        'timeRuleNames': timeRuleNames,
         'startHours': startHours,
         'startMinutes': startMinutes,
         'endHours': endHours,
         'endMinutes': endMinutes,
-
+        'timeAllowStarredContacts': timeAllowStarredContacts,
+        'timeAllowRepeatCallers': timeAllowRepeatCallers,
         'locIds': locIds,
+        'locNames': locNames,
         'lats': lats,
         'lngs': lngs,
         'rads': rads,
-
-        // 🔹 Pass App Packages to Kotlin
+        'locAllowStarredContacts': locAllowStarredContacts,
+        'locAllowRepeatCallers': locAllowRepeatCallers,
+        'appRuleIds': appRuleIds,
+        'appRuleNames': appRuleNames,
         'appPackages': appPackages,
-
-        // 🔹 Pass Activity Types to Kotlin
+        'appAllowStarredContacts': appAllowStarredContacts,
+        'appAllowRepeatCallers': appAllowRepeatCallers,
+        'activityRuleIds': activityRuleIds,
+        'activityRuleNames': activityRuleNames,
         'activityTypes': activityTypes,
+        'activityAllowStarredContacts': activityAllowStarredContacts,
+        'activityAllowRepeatCallers': activityAllowRepeatCallers,
       });
       debugPrint("Successfully synced ALL rules to Android Service.");
     } on PlatformException catch (e) {
