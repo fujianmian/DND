@@ -32,8 +32,16 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   final FocusNode _searchFocusNode = FocusNode();
   List<String> _suggestions = [];
 
-  // TODO: Replace with your actual Google Cloud API Key
-  final String _placesApiKey = dotenv.env['GOOGLE_MAPS_API_KEY']?.trim() ?? '';
+  final String _placesApiKey = _readPlacesApiKey();
+
+  static String _readPlacesApiKey() {
+    try {
+      return dotenv.env['GOOGLE_MAPS_API_KEY']?.trim() ?? '';
+    } catch (e) {
+      debugPrint('Google Places API key unavailable: $e');
+      return '';
+    }
+  }
 
   @override
   void initState() {
@@ -83,6 +91,13 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   // Fetches autocomplete suggestions from Google Places API
   Future<void> _onSearchChanged(String query) async {
     if (query.isEmpty) {
+      setState(() {
+        _suggestions = [];
+      });
+      return;
+    }
+
+    if (_placesApiKey.isEmpty) {
       setState(() {
         _suggestions = [];
       });

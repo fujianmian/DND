@@ -2,19 +2,34 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../database/database.dart';
 import '../main.dart';
+import 'app_catalog.dart';
 import 'dnd_service.dart';
 
-class AutomationManager {
+class AutomationManager with WidgetsBindingObserver {
   Timer? _timer;
+  bool _isObservingLifecycle = false;
 
   // UI State Notifiers
   final ValueNotifier<bool> isDndEnabled = ValueNotifier(false);
   final ValueNotifier<Rule?> activeRule = ValueNotifier(null);
+  final ValueNotifier<List<String>> activeRuleDisplayNames = ValueNotifier(
+    const [],
+  );
+  final ValueNotifier<String> activeStatusText = ValueNotifier(
+    "No active rule",
+  );
+  final ValueNotifier<DateTime?> lastAutomationDndChangedAt = ValueNotifier(
+    null,
+  );
   final ValueNotifier<String> nextChangeText = ValueNotifier(
     "Waiting for next rule...",
   );
 
   void start() {
+    if (!_isObservingLifecycle) {
+      WidgetsBinding.instance.addObserver(this);
+      _isObservingLifecycle = true;
+    }
     // Sync to Android immediately, then check every 30s to update the Flutter UI
     syncRulesToAndroid();
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
@@ -24,6 +39,21 @@ class AutomationManager {
 
   void stop() {
     _timer?.cancel();
+    if (_isObservingLifecycle) {
+      WidgetsBinding.instance.removeObserver(this);
+      _isObservingLifecycle = false;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      refreshUiState();
+    }
+  }
+
+  Future<void> refreshUiState() async {
+    await _updateFlutterUIState();
   }
 
   // --- NEW: Core Sync Method ---
@@ -106,6 +136,41 @@ class AutomationManager {
   // --- Keeps your Status Screen UI updated ---
   Future<void> _updateFlutterUIState() async {
     try {
+      final nativeStateApplied = await _applyNativeAutomationState();
+      if (nativeStateApplied) return;
+
+      await _updateFlutterUIStateFromLocalTimeRules();
+    } catch (e) {
+      debugPrint("UI Update Error: ${e.toString()}");
+    }
+  }
+
+  Future<bool> _applyNativeAutomationState() async {
+    final nativeState = await DndService.getAutomationDndState();
+    if (nativeState == null) return false;
+
+    final displayNames = nativeState.automationDndActive
+        ? await _displayNamesForActiveRules(
+            nativeState.activeAutomationRuleNames,
+          )
+        : const <String>[];
+    final matchedRule = nativeState.automationDndActive
+        ? await _firstEnabledRuleNamed(nativeState.activeAutomationRuleNames)
+        : null;
+
+    isDndEnabled.value = nativeState.automationDndActive;
+    activeRule.value = matchedRule;
+    activeRuleDisplayNames.value = displayNames;
+    lastAutomationDndChangedAt.value = nativeState.lastAutomationDndChangedAt;
+    activeStatusText.value = nativeState.automationDndActive
+        ? _activeStatusFor(displayNames)
+        : "No active rule";
+    nextChangeText.value = _statusDetailFor(nativeState, matchedRule);
+    return true;
+  }
+
+  Future<void> _updateFlutterUIStateFromLocalTimeRules() async {
+    try {
       final activeRules = await (database.select(
         database.rules,
       )..where((t) => t.isEnabled.equals(true))).get();
@@ -131,6 +196,13 @@ class AutomationManager {
 
       isDndEnabled.value = ruleMatchFound;
       activeRule.value = matchedRule;
+      activeRuleDisplayNames.value = matchedRule == null
+          ? const []
+          : [matchedRule.name];
+      activeStatusText.value = matchedRule == null
+          ? "No active rule"
+          : "Active: ${matchedRule.name}";
+      lastAutomationDndChangedAt.value = null;
 
       if (ruleMatchFound && matchedRule != null) {
         nextChangeText.value = "Next change at ${matchedRule.endTime}";
@@ -142,6 +214,92 @@ class AutomationManager {
     } catch (e) {
       debugPrint("UI Update Error: ${e.toString()}");
     }
+  }
+
+  Future<List<String>> _displayNamesForActiveRules(
+    List<String> nativeRuleNames,
+  ) async {
+    if (nativeRuleNames.isEmpty) return const [];
+
+    final enabledRules = await (database.select(
+      database.rules,
+    )..where((t) => t.isEnabled.equals(true))).get();
+
+    final displayNames = <String>[];
+    for (final nativeName in nativeRuleNames) {
+      final rule = _ruleNamed(enabledRules, nativeName);
+      if (rule == null) {
+        displayNames.add(nativeName);
+        continue;
+      }
+
+      displayNames.add(await _displayNameForRule(rule));
+    }
+    return displayNames;
+  }
+
+  Future<Rule?> _firstEnabledRuleNamed(List<String> nativeRuleNames) async {
+    if (nativeRuleNames.isEmpty) return null;
+
+    final enabledRules = await (database.select(
+      database.rules,
+    )..where((t) => t.isEnabled.equals(true))).get();
+
+    for (final nativeName in nativeRuleNames) {
+      final rule = _ruleNamed(enabledRules, nativeName);
+      if (rule != null) return rule;
+    }
+    return null;
+  }
+
+  Rule? _ruleNamed(List<Rule> rules, String name) {
+    for (final rule in rules) {
+      if (rule.name == name) return rule;
+    }
+    return null;
+  }
+
+  Future<String> _displayNameForRule(Rule rule) async {
+    if (rule.type != 2 || rule.packageName == null) return rule.name;
+
+    final packageName = rule.packageName!;
+    final entry =
+        appCatalog.cachedEntry(packageName) ??
+        await appCatalog.loadAppInfo(packageName);
+    final appLabel = entry?.name ?? packageName;
+    if (appLabel == packageName) return rule.name;
+
+    return "${rule.name} ($appLabel)";
+  }
+
+  String _activeStatusFor(List<String> displayNames) {
+    if (displayNames.isEmpty) return "Automation active";
+    return "Active: ${displayNames.join(', ')}";
+  }
+
+  String _statusDetailFor(AutomationDndState nativeState, Rule? matchedRule) {
+    if (!nativeState.automationDndActive) {
+      final changedAt = nativeState.lastAutomationDndChangedAt;
+      if (changedAt != null) {
+        return "Inactive since ${_formatDateTime(changedAt)}";
+      }
+      return "Waiting for next rule...";
+    }
+
+    if (matchedRule?.type == 0 && matchedRule?.endTime != null) {
+      return "Next change at ${matchedRule!.endTime}";
+    }
+
+    final changedAt = nativeState.lastAutomationDndChangedAt;
+    if (changedAt != null) return "Active since ${_formatDateTime(changedAt)}";
+    return "Automation active";
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return "$hour:$minute";
   }
 
   bool _isCurrentTimeInWindow(TimeOfDay now, TimeOfDay start, TimeOfDay end) {

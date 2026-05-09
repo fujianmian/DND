@@ -1,5 +1,30 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+class KeywordBypassSettings {
+  const KeywordBypassSettings({
+    required this.enabled,
+    required this.keywords,
+    required this.packages,
+  });
+
+  final bool enabled;
+  final List<String> keywords;
+  final List<String> packages;
+}
+
+class AutomationDndState {
+  const AutomationDndState({
+    required this.automationDndActive,
+    required this.activeAutomationRuleNames,
+    required this.lastAutomationDndChangedAt,
+  });
+
+  final bool automationDndActive;
+  final List<String> activeAutomationRuleNames;
+  final DateTime? lastAutomationDndChangedAt;
+}
 
 class DndService {
   static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
@@ -19,6 +44,122 @@ class DndService {
       await platform.invokeMethod('openDndSettings');
     } on PlatformException catch (e) {
       debugPrint("Failed to open DND settings: '${e.message}'.");
+    }
+  }
+
+  static Future<bool> isNotificationListenerEnabled() async {
+    try {
+      final bool result = await platform.invokeMethod(
+        'isNotificationListenerEnabled',
+      );
+      return result;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> openNotificationListenerSettings() async {
+    try {
+      await platform.invokeMethod('openNotificationListenerSettings');
+    } on PlatformException catch (e) {
+      debugPrint(
+        "Failed to open Notification Listener settings: '${e.message}'.",
+      );
+    }
+  }
+
+  static Future<bool> isNotificationPermissionGranted() async {
+    try {
+      final bool result = await platform.invokeMethod(
+        'checkNotificationPermission',
+      );
+      return result;
+    } on PlatformException catch (_) {
+      return Permission.notification.isGranted;
+    }
+  }
+
+  static Future<void> requestNotificationPermission() async {
+    final status = await Permission.notification.request();
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    }
+  }
+
+  static Future<bool> isLocationPermissionGranted() async {
+    return Permission.location.isGranted;
+  }
+
+  static Future<void> requestLocationPermission() async {
+    final status = await Permission.location.request();
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    }
+  }
+
+  static Future<bool> isBackgroundLocationPermissionGranted() async {
+    return Permission.locationAlways.isGranted;
+  }
+
+  static Future<void> requestBackgroundLocationPermission() async {
+    final status = await Permission.locationAlways.request();
+    if (!status.isGranted) {
+      await openAppSettings();
+    }
+  }
+
+  static Future<bool> isActivityRecognitionPermissionGranted() async {
+    return Permission.activityRecognition.isGranted;
+  }
+
+  static Future<void> requestActivityRecognitionPermission() async {
+    final status = await Permission.activityRecognition.request();
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    }
+  }
+
+  static Future<KeywordBypassSettings> getKeywordBypassSettings() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getKeywordBypassSettings',
+      );
+      return KeywordBypassSettings(
+        enabled: result?['enabled'] as bool? ?? false,
+        keywords:
+            (result?['keywords'] as List<dynamic>?)
+                ?.map((value) => value.toString())
+                .toList() ??
+            const ['urgent', 'emergency', 'asap'],
+        packages:
+            (result?['packages'] as List<dynamic>?)
+                ?.map((value) => value.toString())
+                .toList() ??
+            const [],
+      );
+    } on PlatformException catch (e) {
+      debugPrint("Failed to load keyword bypass settings: '${e.message}'.");
+      return const KeywordBypassSettings(
+        enabled: false,
+        keywords: ['urgent', 'emergency', 'asap'],
+        packages: [],
+      );
+    }
+  }
+
+  static Future<void> saveKeywordBypassSettings({
+    required bool enabled,
+    required List<String> keywords,
+    required List<String> packages,
+  }) async {
+    try {
+      await platform.invokeMethod('saveKeywordBypassSettings', {
+        'enabled': enabled,
+        'keywords': keywords,
+        'packages': packages,
+      });
+    } on PlatformException catch (e) {
+      debugPrint("Failed to save keyword bypass settings: '${e.message}'.");
     }
   }
 
@@ -56,6 +197,18 @@ class DndService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getInstalledApps() async {
+    try {
+      final List<dynamic> apps = await platform.invokeMethod(
+        'getInstalledApps',
+      );
+      return apps.map((app) => Map<String, dynamic>.from(app)).toList();
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get installed apps: '${e.message}'.");
+      return [];
+    }
+  }
+
   // --- Fetch Individual App Details (Name & Icon) ---
   static Future<Map<String, dynamic>?> getAppInfo(String packageName) async {
     try {
@@ -70,6 +223,37 @@ class DndService {
       }
     } on PlatformException catch (e) {
       debugPrint("Failed to get app info: '${e.message}'.");
+    }
+    return null;
+  }
+
+  static Future<AutomationDndState?> getAutomationDndState() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getAutomationDndState',
+      );
+      if (result == null) return null;
+
+      final ruleNamesText =
+          result['activeAutomationRuleNames'] as String? ?? '';
+      final changedAtMillis =
+          (result['lastAutomationDndChangedAt'] as num?)?.toInt() ?? 0;
+
+      return AutomationDndState(
+        automationDndActive: result['automationDndActive'] as bool? ?? false,
+        activeAutomationRuleNames: ruleNamesText
+            .split(',')
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toList(),
+        lastAutomationDndChangedAt: changedAtMillis <= 0
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(changedAtMillis),
+      );
+    } on PlatformException catch (e) {
+      debugPrint("Failed to load automation DND state: '${e.message}'.");
+    } catch (e) {
+      debugPrint("Failed to load automation DND state: '$e'.");
     }
     return null;
   }

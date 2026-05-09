@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'database/database.dart';
 import 'services/automation_manager.dart';
 import 'theme/app_theme.dart';
@@ -7,8 +8,13 @@ import 'screens/main_screen.dart';
 final database = AppDatabase();
 final automationManager = AutomationManager();
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    debugPrint('Unable to load .env: $e');
+  }
   automationManager.start();
   runApp(const QuietlyApp());
 }

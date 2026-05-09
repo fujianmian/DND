@@ -5,6 +5,7 @@ import '../database/database.dart';
 import '../models/rule.dart' as model;
 import '../models/rule_trigger_values.dart';
 import '../main.dart'; // Access global 'database'
+import '../services/app_catalog.dart';
 import 'map_picker_screen.dart'; // Make sure this matches your map screen file name
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -49,7 +50,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     'TILTING': 'Tilting Device',
   };
 
-  List<Map<String, dynamic>> _installedApps = [];
+  List<AppCatalogEntry> _installedApps = [];
   bool _isLoadingApps = false;
   bool _allowStarredContacts = false;
   bool _allowRepeatCallers = false;
@@ -100,16 +101,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _fetchInstalledApps();
       }
     } else if (val == model.TriggerType.location) {
-      var status = await Permission.location.request();
-      if (!status.isGranted) {
-        _showPermissionDialog(
-          "Location Required",
-          "To trigger DND by location, please grant Location permissions.",
-          () => openAppSettings(), // Opens App Info settings
-        );
-        return;
-      }
-      // Note: For background geofencing, you might also need Permission.locationAlways
+      final hasLocationPermission = await _ensureForegroundLocationPermission();
+      if (!hasLocationPermission) return;
     } else if (val == model.TriggerType.activity) {
       var status = await Permission.activityRecognition.request();
       if (!status.isGranted) {
@@ -140,7 +133,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _selectedType = model.TriggerType.location;
       } else if (widget.rule!.type == 2) {
         _selectedType = model.TriggerType.app;
-        _fetchInstalledApps();
       } else if (widget.rule!.type == 3) {
         _selectedType = model.TriggerType.activity;
       }
@@ -168,6 +160,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       _packageName = widget.rule!.packageName;
     }
 
+    if (_selectedType == model.TriggerType.app) {
+      _fetchInstalledApps();
+    }
+
     if (widget.rule?.activityType != null) {
       _activityType = widget.rule!.activityType;
     }
@@ -179,16 +175,30 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   Future<void> _fetchInstalledApps() async {
     setState(() => _isLoadingApps = true);
     try {
-      final List<dynamic> apps = await platform.invokeMethod(
-        'getInstalledApps',
-      );
+      final apps = await appCatalog.loadInstalledApps();
+      final selectedPackage = _packageName;
+      var entries = apps;
+      if (selectedPackage != null &&
+          selectedPackage.isNotEmpty &&
+          !entries.any((app) => app.packageName == selectedPackage)) {
+        final selectedApp = await appCatalog.loadAppInfo(selectedPackage);
+        entries = [
+          ...entries,
+          selectedApp ??
+              AppCatalogEntry(
+                packageName: selectedPackage,
+                name: selectedPackage,
+              ),
+        ];
+      }
+      if (!mounted) return;
       setState(() {
-        _installedApps = apps.map((e) => Map<String, dynamic>.from(e)).toList();
+        _installedApps = entries;
         _isLoadingApps = false;
       });
     } catch (e) {
-      print("Failed to get apps: $e");
-      setState(() => _isLoadingApps = false);
+      debugPrint("Failed to get apps: $e");
+      if (mounted) setState(() => _isLoadingApps = false);
     }
   }
 
@@ -222,6 +232,20 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _showSnackBar(triggerError);
       }
       return;
+    }
+
+    if (_selectedType == model.TriggerType.location) {
+      final hasLocationPermission = await _ensureForegroundLocationPermission();
+      if (!hasLocationPermission) return;
+      if (!mounted) return;
+
+      final willBeEnabled = widget.rule?.isEnabled ?? true;
+      if (willBeEnabled) {
+        final hasBackgroundLocation =
+            await _ensureBackgroundLocationForActiveRule();
+        if (!hasBackgroundLocation) return;
+        if (!mounted) return;
+      }
     }
 
     final name = _nameController.text.trim();
@@ -291,8 +315,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         if (_latitude == null || _longitude == null || _radius == null) {
           return 'Please select a location and radius.';
         }
-        if (_radius! <= 0) {
-          return 'Please select a radius greater than 0.';
+        if (_radius! < 50) {
+          return 'Please select a radius of at least 50m.';
         }
         return null;
       case model.TriggerType.app:
@@ -314,6 +338,38 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<bool> _ensureForegroundLocationPermission() async {
+    var status = await Permission.location.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.location.request();
+    if (status.isGranted) return true;
+
+    if (!mounted) return false;
+    _showPermissionDialog(
+      "Location Permission Needed",
+      "Allow location access to choose places for location rules.",
+      () => openAppSettings(),
+    );
+    return false;
+  }
+
+  Future<bool> _ensureBackgroundLocationForActiveRule() async {
+    var status = await Permission.locationAlways.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.locationAlways.request();
+    if (status.isGranted) return true;
+
+    if (!mounted) return false;
+    _showPermissionDialog(
+      "Background Location Needed",
+      "Allow all-the-time location so this rule can activate when Quietly is not open.",
+      () => openAppSettings(),
+    );
+    return false;
+  }
+
   void _deleteRule() async {
     if (widget.rule != null) {
       await database.deleteRule(widget.rule!);
@@ -326,6 +382,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   }
 
   Future<void> _selectLocationOnMap() async {
+    final hasLocationPermission = await _ensureForegroundLocationPermission();
+    if (!hasLocationPermission) return;
+    if (!mounted) return;
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -452,7 +512,11 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                               : 'Lat: ${_latitude!.toStringAsFixed(4)}, Lng: ${_longitude!.toStringAsFixed(4)}',
                         ),
                         subtitle: _radius != null
-                            ? Text('Radius: ${_radius}m')
+                            ? Text(
+                                _radius! < 100
+                                    ? 'Radius: ${_radius}m - 100m+ recommended for reliability'
+                                    : 'Radius: ${_radius}m',
+                              )
                             : null,
                         trailing: const Icon(Icons.chevron_right),
                         onTap: _selectLocationOnMap,
@@ -473,9 +537,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                         child: Center(child: CircularProgressIndicator()),
                       )
                     : DropdownButtonFormField<String>(
-                        value:
+                        key: ValueKey(_packageName),
+                        initialValue:
                             _installedApps.any(
-                              (app) => app['package'] == _packageName,
+                              (app) => app.packageName == _packageName,
                             )
                             ? _packageName
                             : null,
@@ -487,11 +552,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                         ),
                         items: _installedApps.map((app) {
                           // 🔹 Extract the Icon bytes
-                          final Uint8List? iconBytes =
-                              app['icon'] as Uint8List?;
+                          final Uint8List? iconBytes = app.iconBytes;
 
                           return DropdownMenuItem<String>(
-                            value: app['package'] as String,
+                            value: app.packageName,
                             child: Row(
                               children: [
                                 // 🔹 Display the image, or a default icon if missing
@@ -507,7 +571,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    app['name'] as String,
+                                    app.name,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),

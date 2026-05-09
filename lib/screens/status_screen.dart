@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../main.dart'; // Allows access to the global automationManager
-import '../database/database.dart'; // Allows access to the Rule model
 import 'package:flutter/services.dart';
 
 class StatusScreen extends StatefulWidget {
@@ -27,11 +26,13 @@ class _StatusScreenState extends State<StatusScreen> {
   void initState() {
     super.initState();
     _checkInitialDndPermission();
+    automationManager.refreshUiState();
     // Update the clock every minute
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       setState(() {
         TimeOfDay.now(); // = TimeOfDay.now();
       });
+      automationManager.refreshUiState();
     });
   }
 
@@ -98,50 +99,55 @@ class _StatusScreenState extends State<StatusScreen> {
             ValueListenableBuilder<bool>(
               valueListenable: automationManager.isDndEnabled,
               builder: (context, isDndOn, _) {
-                return ValueListenableBuilder<Rule?>(
-                  valueListenable: automationManager.activeRule,
-                  builder: (context, rule, _) {
-                    return Card(
-                      color: cardColor,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          children: [
-                            Icon(
-                              isDndOn
-                                  ? Icons.notifications_off
-                                  : Icons.notifications,
-                              color: isDndOn
-                                  ? primaryTextColor
-                                  : secondaryTextColor,
-                              size: 48,
+                return ValueListenableBuilder<String>(
+                  valueListenable: automationManager.activeStatusText,
+                  builder: (context, activeStatusText, _) {
+                    return ValueListenableBuilder<List<String>>(
+                      valueListenable: automationManager.activeRuleDisplayNames,
+                      builder: (context, activeRuleNames, _) {
+                        return Card(
+                          color: cardColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  isDndOn
+                                      ? Icons.notifications_off
+                                      : Icons.notifications,
+                                  color: isDndOn
+                                      ? primaryTextColor
+                                      : secondaryTextColor,
+                                  size: 48,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  isDndOn ? "DND is ON" : "DND is OFF",
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: primaryTextColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  isDndOn && activeRuleNames.isEmpty
+                                      ? "Automation active"
+                                      : activeStatusText,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: secondaryTextColor,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                            Text(
-                              isDndOn ? "DND is ON" : "DND is OFF",
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: primaryTextColor,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              rule != null
-                                  ? "Triggered by: ${rule.name} (${rule.startTime} - ${rule.endTime})"
-                                  : "No active rule",
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: secondaryTextColor,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
                     );
                   },
                 );
@@ -170,11 +176,14 @@ class _StatusScreenState extends State<StatusScreen> {
                           size: 20,
                         ),
                         const SizedBox(width: 12),
-                        Text(
-                          nextText,
-                          style: TextStyle(
-                            color: secondaryTextColor,
-                            fontSize: 16,
+                        Expanded(
+                          child: Text(
+                            nextText,
+                            style: TextStyle(
+                              color: secondaryTextColor,
+                              fontSize: 16,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       ],

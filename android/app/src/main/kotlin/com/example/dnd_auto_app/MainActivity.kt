@@ -1,7 +1,9 @@
 package com.example.dnd_auto_app
 
 import android.app.AppOpsManager
+import android.Manifest
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -23,6 +25,67 @@ import java.io.ByteArrayOutputStream
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.example.dnd_auto_app/dnd"
+    private val KEYWORD_BYPASS_PREFS = "quietly_keyword_bypass_prefs"
+    private val KEYWORD_BYPASS_ENABLED = "keywordBypassEnabled"
+    private val KEYWORD_BYPASS_KEYWORDS = "keywordBypassKeywords"
+    private val KEYWORD_BYPASS_PACKAGES = "keywordBypassPackages"
+
+    private fun isNotificationListenerEnabled(): Boolean {
+        val enabledListeners = Settings.Secure.getString(
+            contentResolver,
+            "enabled_notification_listeners"
+        ) ?: return false
+        val expectedComponent = ComponentName(
+            this,
+            EmergencyNotificationListenerService::class.java
+        )
+
+        return enabledListeners.split(":").any { flattenedComponent ->
+            val enabledComponent = ComponentName.unflattenFromString(flattenedComponent)
+            enabledComponent?.packageName == packageName &&
+                enabledComponent.className == expectedComponent.className
+        }
+    }
+
+    private fun defaultKeywordBypassKeywords(): Set<String> {
+        return linkedSetOf("urgent", "emergency", "asap")
+    }
+
+    private fun stringListArg(call: MethodCall, name: String): List<String> {
+        return call.argument<ArrayList<String>>(name)
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?: emptyList()
+    }
+
+    private fun getKeywordBypassSettings(): Map<String, Any> {
+        val prefs = getSharedPreferences(KEYWORD_BYPASS_PREFS, Context.MODE_PRIVATE)
+        val keywords = if (prefs.contains(KEYWORD_BYPASS_KEYWORDS)) {
+            prefs.getStringSet(KEYWORD_BYPASS_KEYWORDS, emptySet()) ?: emptySet()
+        } else {
+            defaultKeywordBypassKeywords()
+        }
+        val packages = prefs.getStringSet(KEYWORD_BYPASS_PACKAGES, emptySet()) ?: emptySet()
+
+        return mapOf(
+            "enabled" to prefs.getBoolean(KEYWORD_BYPASS_ENABLED, false),
+            "keywords" to keywords.toList(),
+            "packages" to packages.toList()
+        )
+    }
+
+    private fun saveKeywordBypassSettings(call: MethodCall) {
+        val enabled = call.argument<Boolean>("enabled") ?: false
+        val keywords = stringListArg(call, "keywords").toSet()
+        val packages = stringListArg(call, "packages").toSet()
+
+        getSharedPreferences(KEYWORD_BYPASS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEYWORD_BYPASS_ENABLED, enabled)
+            .putStringSet(KEYWORD_BYPASS_KEYWORDS, keywords)
+            .putStringSet(KEYWORD_BYPASS_PACKAGES, packages)
+            .apply()
+    }
 
     private fun booleanArrayArg(call: MethodCall, name: String): BooleanArray {
         val values = call.argument<ArrayList<Boolean>>(name) ?: return booleanArrayOf()
@@ -70,6 +133,36 @@ class MainActivity: FlutterActivity() {
                 "openDndSettings" -> {
                     val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
                     startActivity(intent)
+                    result.success(null)
+                }
+                "isNotificationListenerEnabled" -> {
+                    result.success(isNotificationListenerEnabled())
+                }
+                "openNotificationListenerSettings" -> {
+                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    startActivity(intent)
+                    result.success(null)
+                }
+                "checkNotificationPermission" -> {
+                    val isGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                    result.success(isGranted)
+                }
+                "getKeywordBypassSettings" -> {
+                    result.success(getKeywordBypassSettings())
+                }
+                "getAutomationDndState" -> {
+                    val automationState = AutomationDndStateStore.read(this)
+                    result.success(
+                        mapOf(
+                            "automationDndActive" to automationState.automationDndActive,
+                            "activeAutomationRuleNames" to automationState.activeAutomationRuleNames,
+                            "lastAutomationDndChangedAt" to automationState.lastAutomationDndChangedAt
+                        )
+                    )
+                }
+                "saveKeywordBypassSettings" -> {
+                    saveKeywordBypassSettings(call)
                     result.success(null)
                 }
                 "enableDnd" -> {
@@ -227,7 +320,9 @@ class MainActivity: FlutterActivity() {
                         putExtra("activityTypes", activityTypes)
                         putExtra("activityAllowStarredContacts", activityAllowStarredContacts)
                         putExtra("activityAllowRepeatCallers", activityAllowRepeatCallers)
+                        CachedRulePayloadStore.markPayloadPresent(this)
                     }
+                    CachedRulePayloadStore.saveFromIntent(this, serviceIntent)
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && call.method == "startService") {
                         startForegroundService(serviceIntent)

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../database/database.dart';
 import '../main.dart';
+import '../services/app_catalog.dart';
 import '../theme/app_theme.dart';
 import 'create_rule_wizard.dart';
 import 'rule_form_screen.dart';
@@ -14,6 +16,19 @@ class RuleListScreen extends StatefulWidget {
 }
 
 class _RuleListScreenState extends State<RuleListScreen> {
+  final Set<String> _loadingAppPackages = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAppCatalog();
+  }
+
+  Future<void> _loadAppCatalog() async {
+    await appCatalog.loadInstalledApps();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,6 +42,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
 
           final rules = snapshot.data ?? [];
           if (rules.isEmpty) return _buildEmptyState();
+          _primeAppLabels(rules);
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -99,8 +115,67 @@ class _RuleListScreenState extends State<RuleListScreen> {
   }
 
   Future<void> _toggleRule(Rule rule, bool isEnabled) async {
+    if (isEnabled && rule.type == 1) {
+      final canEnableLocationRule = await _ensureLocationRulePermissions();
+      if (!canEnableLocationRule) return;
+    }
+
     await database.updateRule(rule.copyWith(isEnabled: isEnabled));
     await automationManager.syncRulesToAndroid();
+  }
+
+  Future<bool> _ensureLocationRulePermissions() async {
+    var locationStatus = await Permission.location.status;
+    if (!locationStatus.isGranted) {
+      locationStatus = await Permission.location.request();
+    }
+    if (!locationStatus.isGranted) {
+      if (!mounted) return false;
+      _showPermissionDialog(
+        'Location Permission Needed',
+        'Allow location access to use location rules.',
+      );
+      return false;
+    }
+    if (!mounted) return false;
+
+    var backgroundStatus = await Permission.locationAlways.status;
+    if (!backgroundStatus.isGranted) {
+      backgroundStatus = await Permission.locationAlways.request();
+    }
+    if (!backgroundStatus.isGranted) {
+      if (!mounted) return false;
+      _showPermissionDialog(
+        'Background Location Needed',
+        'Allow all-the-time location so this rule can activate when Quietly is not open.',
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  void _showPermissionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _triggerLabel(Rule rule) {
@@ -113,7 +188,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
         final radius = rule.radius == null ? '' : ' (${rule.radius}m)';
         return 'Location$radius';
       case 2:
-        return 'App: ${rule.packageName ?? 'Not selected'}';
+        return 'App: ${appCatalog.labelFor(rule.packageName)}';
       case 3:
         return 'Activity: ${rule.activityType ?? 'Not selected'}';
       default:
@@ -122,7 +197,9 @@ class _RuleListScreenState extends State<RuleListScreen> {
   }
 
   List<Widget> _ruleChips(Rule rule) {
-    final chips = <Widget>[_buildChip(_triggerLabel(rule))];
+    final chips = <Widget>[
+      _buildChip(_triggerLabel(rule), leading: _triggerLeading(rule)),
+    ];
 
     if (rule.allowStarredContacts) {
       chips.add(_buildChip('Starred contacts'));
@@ -134,7 +211,37 @@ class _RuleListScreenState extends State<RuleListScreen> {
     return chips;
   }
 
-  Widget _buildChip(String label) {
+  Widget? _triggerLeading(Rule rule) {
+    if (rule.type != 2 || rule.packageName == null) return null;
+
+    final entry = appCatalog.cachedEntry(rule.packageName!);
+    if (entry?.iconBytes == null) {
+      return const Icon(Icons.apps, size: 16, color: AppTheme.logoBlue);
+    }
+
+    return Image.memory(entry!.iconBytes!, width: 16, height: 16);
+  }
+
+  void _primeAppLabels(List<Rule> rules) {
+    for (final rule in rules) {
+      final packageName = rule.packageName;
+      if (rule.type != 2 ||
+          packageName == null ||
+          packageName.isEmpty ||
+          appCatalog.cachedEntry(packageName) != null ||
+          _loadingAppPackages.contains(packageName)) {
+        continue;
+      }
+
+      _loadingAppPackages.add(packageName);
+      appCatalog.loadAppInfo(packageName).whenComplete(() {
+        _loadingAppPackages.remove(packageName);
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  Widget _buildChip(String label, {Widget? leading}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -142,9 +249,21 @@ class _RuleListScreenState extends State<RuleListScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.logoBlue),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12, color: AppTheme.pureBlack),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (leading != null) ...[leading, const SizedBox(width: 6)],
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width - 96,
+            ),
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: AppTheme.pureBlack),
+            ),
+          ),
+        ],
       ),
     );
   }

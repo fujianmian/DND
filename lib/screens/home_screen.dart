@@ -1,23 +1,33 @@
 import 'package:flutter/material.dart';
+import '../main.dart';
 import '../theme/app_theme.dart';
-// import '../services/dnd_service.dart';
-// import '../services/automation_manager.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  bool _isDndActive = false; // TODO: Bind to DndService
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    automationManager.refreshUiState();
+  }
 
-  void _toggleDnd(bool value) {
-    setState(() {
-      _isDndActive = value;
-    });
-    // TODO: DndService.instance.setDndMode(value);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      automationManager.refreshUiState();
+    }
   }
 
   @override
@@ -28,56 +38,94 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.all(16.0),
         children: [
           // Large Status Card
-          Container(
-            decoration: BoxDecoration(
-              gradient: _isDndActive
-                  ? const LinearGradient(
-                      colors: [AppTheme.logoPurple, AppTheme.logoBlue],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    )
-                  : null,
-              color: _isDndActive ? null : AppTheme.pureWhite,
-              borderRadius: BorderRadius.circular(32),
-              border: _isDndActive
-                  ? null
-                  : Border.all(color: AppTheme.pureBlack.withOpacity(0.1)),
-            ),
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              children: [
-                Icon(
-                  _isDndActive
-                      ? Icons.notifications_off_rounded
-                      : Icons.notifications_active_rounded,
-                  size: 64,
-                  color: _isDndActive ? AppTheme.pureWhite : AppTheme.logoBlue,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _isDndActive ? 'Focus Mode Active' : 'Notifications On',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: _isDndActive
-                        ? AppTheme.pureWhite
-                        : AppTheme.pureBlack,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _isDndActive ? 'Rule: Deep Work Focus' : 'No active rules',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _isDndActive
-                        ? AppTheme.pureWhite.withOpacity(0.8)
-                        : AppTheme.pureBlack.withOpacity(0.5),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Switch(value: _isDndActive, onChanged: _toggleDnd),
-              ],
-            ),
+          ValueListenableBuilder<bool>(
+            valueListenable: automationManager.isDndEnabled,
+            builder: (context, isDndActive, _) {
+              return ValueListenableBuilder<String>(
+                valueListenable: automationManager.activeStatusText,
+                builder: (context, statusText, _) {
+                  return ValueListenableBuilder<String>(
+                    valueListenable: automationManager.nextChangeText,
+                    builder: (context, detailText, _) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          gradient: isDndActive
+                              ? const LinearGradient(
+                                  colors: [
+                                    AppTheme.logoPurple,
+                                    AppTheme.logoBlue,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
+                          color: isDndActive ? null : AppTheme.pureWhite,
+                          borderRadius: BorderRadius.circular(32),
+                          border: isDndActive
+                              ? null
+                              : Border.all(
+                                  color: AppTheme.pureBlack.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                ),
+                        ),
+                        padding: const EdgeInsets.all(32.0),
+                        child: Column(
+                          children: [
+                            Icon(
+                              isDndActive
+                                  ? Icons.notifications_off_rounded
+                                  : Icons.notifications_active_rounded,
+                              size: 64,
+                              color: isDndActive
+                                  ? AppTheme.pureWhite
+                                  : AppTheme.logoBlue,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              isDndActive
+                                  ? 'Focus Mode Active'
+                                  : 'Notifications On',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDndActive
+                                    ? AppTheme.pureWhite
+                                    : AppTheme.pureBlack,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              statusText,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDndActive
+                                    ? AppTheme.pureWhite.withValues(alpha: 0.85)
+                                    : AppTheme.pureBlack.withValues(alpha: 0.6),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              detailText,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDndActive
+                                    ? AppTheme.pureWhite.withValues(alpha: 0.7)
+                                    : AppTheme.pureBlack.withValues(
+                                        alpha: 0.45,
+                                      ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              );
+            },
           ),
           const SizedBox(height: 32),
 
@@ -97,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppTheme.logoCyan.withOpacity(0.1),
+                  color: AppTheme.logoCyan.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -114,7 +162,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               subtitle: Text(
                 'Silence notifications from 11 PM to 7 AM every day.',
-                style: TextStyle(color: AppTheme.pureBlack.withOpacity(0.6)),
+                style: TextStyle(
+                  color: AppTheme.pureBlack.withValues(alpha: 0.6),
+                ),
               ),
               trailing: IconButton(
                 icon: const Icon(

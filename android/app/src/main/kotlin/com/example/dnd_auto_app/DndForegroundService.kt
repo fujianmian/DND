@@ -13,9 +13,12 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest
@@ -67,7 +70,10 @@ data class DndActivityRule(
 class DndForegroundService : Service() {
 
     private val CHANNEL_ID = "DndServiceChannel"
+    private val DND_DISABLE_GRACE_MS = 3000L
     private var timer: Timer? = null
+    private val disableGraceHandler = Handler(Looper.getMainLooper())
+    private var pendingDisableRunnable: Runnable? = null
     private var activeRules: List<DndRule> = emptyList()
     private var activeLocationRules: List<DndLocationRule> = emptyList()
     private var targetAppRules: List<DndAppRule> = emptyList()
@@ -85,7 +91,8 @@ class DndForegroundService : Service() {
 
     private val geofenceUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            checkAndToggleDnd() // Re-evaluate when geofence state changes
+            android.util.Log.d("DndActivity", "Internal DND evaluation broadcast received: action=${intent?.action}")
+            checkAndToggleDnd("internal-broadcast")
         }
     }
 
@@ -113,15 +120,18 @@ class DndForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val ruleIntent = resolveRulePayloadIntent(intent)
+        val hasResolvedRulePayload = ruleIntent != null
+
         // 1. Reconstruct Time Rules
-        val startHours = intent?.getIntArrayExtra("startHours") ?: intArrayOf()
-        val startMinutes = intent?.getIntArrayExtra("startMinutes") ?: intArrayOf()
-        val endHours = intent?.getIntArrayExtra("endHours") ?: intArrayOf()
-        val endMinutes = intent?.getIntArrayExtra("endMinutes") ?: intArrayOf()
-        val timeRuleIds = intent?.getStringArrayExtra("timeRuleIds") ?: emptyArray()
-        val timeRuleNames = intent?.getStringArrayExtra("timeRuleNames") ?: emptyArray()
-        val timeAllowStarredContacts = intent?.getBooleanArrayExtra("timeAllowStarredContacts") ?: booleanArrayOf()
-        val timeAllowRepeatCallers = intent?.getBooleanArrayExtra("timeAllowRepeatCallers") ?: booleanArrayOf()
+        val startHours = ruleIntent?.getIntArrayExtra("startHours") ?: intArrayOf()
+        val startMinutes = ruleIntent?.getIntArrayExtra("startMinutes") ?: intArrayOf()
+        val endHours = ruleIntent?.getIntArrayExtra("endHours") ?: intArrayOf()
+        val endMinutes = ruleIntent?.getIntArrayExtra("endMinutes") ?: intArrayOf()
+        val timeRuleIds = ruleIntent?.getStringArrayExtra("timeRuleIds") ?: emptyArray()
+        val timeRuleNames = ruleIntent?.getStringArrayExtra("timeRuleNames") ?: emptyArray()
+        val timeAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("timeAllowStarredContacts") ?: booleanArrayOf()
+        val timeAllowRepeatCallers = ruleIntent?.getBooleanArrayExtra("timeAllowRepeatCallers") ?: booleanArrayOf()
 
         val newRules = mutableListOf<DndRule>()
         for (i in startHours.indices) {
@@ -141,13 +151,13 @@ class DndForegroundService : Service() {
         activeRules = newRules
 
         // 2. Extract Location Rules
-        val locIds = intent?.getStringArrayExtra("locIds") ?: emptyArray()
-        val locNames = intent?.getStringArrayExtra("locNames") ?: emptyArray()
-        val lats = intent?.getDoubleArrayExtra("lats") ?: doubleArrayOf()
-        val lngs = intent?.getDoubleArrayExtra("lngs") ?: doubleArrayOf()
-        val rads = intent?.getIntArrayExtra("rads") ?: intArrayOf()
-        val locAllowStarredContacts = intent?.getBooleanArrayExtra("locAllowStarredContacts") ?: booleanArrayOf()
-        val locAllowRepeatCallers = intent?.getBooleanArrayExtra("locAllowRepeatCallers") ?: booleanArrayOf()
+        val locIds = ruleIntent?.getStringArrayExtra("locIds") ?: emptyArray()
+        val locNames = ruleIntent?.getStringArrayExtra("locNames") ?: emptyArray()
+        val lats = ruleIntent?.getDoubleArrayExtra("lats") ?: doubleArrayOf()
+        val lngs = ruleIntent?.getDoubleArrayExtra("lngs") ?: doubleArrayOf()
+        val rads = ruleIntent?.getIntArrayExtra("rads") ?: intArrayOf()
+        val locAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("locAllowStarredContacts") ?: booleanArrayOf()
+        val locAllowRepeatCallers = ruleIntent?.getBooleanArrayExtra("locAllowRepeatCallers") ?: booleanArrayOf()
         activeLocationRules = locIds.indices.map { i ->
             DndLocationRule(
                 locIds[i],
@@ -159,15 +169,22 @@ class DndForegroundService : Service() {
                 boolAt(locAllowRepeatCallers, i)
             )
         }
-        
-        setupGeofences(locIds, lats, lngs, rads)
+
+        if (hasResolvedRulePayload) {
+            setupGeofences(locIds, lats, lngs, rads)
+        } else {
+            android.util.Log.w(
+                "DndRuleCache",
+                "No valid rule payload available during service start. Existing geofence registrations were left untouched."
+            )
+        }
 
         // 3. Extract App Usage Rules
-        targetAppPackages = intent?.getStringArrayExtra("appPackages") ?: emptyArray()
-        val appRuleIds = intent?.getStringArrayExtra("appRuleIds") ?: emptyArray()
-        val appRuleNames = intent?.getStringArrayExtra("appRuleNames") ?: emptyArray()
-        val appAllowStarredContacts = intent?.getBooleanArrayExtra("appAllowStarredContacts") ?: booleanArrayOf()
-        val appAllowRepeatCallers = intent?.getBooleanArrayExtra("appAllowRepeatCallers") ?: booleanArrayOf()
+        targetAppPackages = ruleIntent?.getStringArrayExtra("appPackages") ?: emptyArray()
+        val appRuleIds = ruleIntent?.getStringArrayExtra("appRuleIds") ?: emptyArray()
+        val appRuleNames = ruleIntent?.getStringArrayExtra("appRuleNames") ?: emptyArray()
+        val appAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("appAllowStarredContacts") ?: booleanArrayOf()
+        val appAllowRepeatCallers = ruleIntent?.getBooleanArrayExtra("appAllowRepeatCallers") ?: booleanArrayOf()
         targetAppRules = targetAppPackages.indices.map { i ->
             DndAppRule(
                 stringAt(appRuleIds, i, i.toString()),
@@ -179,11 +196,11 @@ class DndForegroundService : Service() {
         }
 
         // 4. Extract Activity Rules & Setup
-        targetActivityTypes = intent?.getStringArrayExtra("activityTypes") ?: emptyArray()
-        val activityRuleIds = intent?.getStringArrayExtra("activityRuleIds") ?: emptyArray()
-        val activityRuleNames = intent?.getStringArrayExtra("activityRuleNames") ?: emptyArray()
-        val activityAllowStarredContacts = intent?.getBooleanArrayExtra("activityAllowStarredContacts") ?: booleanArrayOf()
-        val activityAllowRepeatCallers = intent?.getBooleanArrayExtra("activityAllowRepeatCallers") ?: booleanArrayOf()
+        targetActivityTypes = ruleIntent?.getStringArrayExtra("activityTypes") ?: emptyArray()
+        val activityRuleIds = ruleIntent?.getStringArrayExtra("activityRuleIds") ?: emptyArray()
+        val activityRuleNames = ruleIntent?.getStringArrayExtra("activityRuleNames") ?: emptyArray()
+        val activityAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("activityAllowStarredContacts") ?: booleanArrayOf()
+        val activityAllowRepeatCallers = ruleIntent?.getBooleanArrayExtra("activityAllowRepeatCallers") ?: booleanArrayOf()
         targetActivityRules = targetActivityTypes.indices.map { i ->
             DndActivityRule(
                 stringAt(activityRuleIds, i, i.toString()),
@@ -193,7 +210,9 @@ class DndForegroundService : Service() {
                 boolAt(activityAllowRepeatCallers, i)
             )
         }
-        setupActivityRecognition(targetActivityTypes.isNotEmpty())
+        if (hasResolvedRulePayload) {
+            setupActivityRecognition(targetActivityTypes.isNotEmpty())
+        }
 
         logSyncedRuleExceptions()
 
@@ -216,6 +235,31 @@ class DndForegroundService : Service() {
         startAutomationLoop()
 
         return START_REDELIVER_INTENT 
+    }
+
+    private fun resolveRulePayloadIntent(intent: Intent?): Intent? {
+        val action = intent?.action
+        val hasPayload = CachedRulePayloadStore.hasRulePayload(intent)
+        android.util.Log.d(
+            "DndRuleCache",
+            "Service start payload check: action=$action, hasPayload=$hasPayload"
+        )
+
+        if (hasPayload && intent != null) {
+            CachedRulePayloadStore.saveFromIntent(this, intent)
+            android.util.Log.d("DndRuleCache", "Using rule payload from service intent. Intentional empty sync is allowed.")
+            return intent
+        }
+
+        android.util.Log.d("DndRuleCache", "Restore requested because service intent has no rule payload.")
+        val restoredIntent = CachedRulePayloadStore.restoreIntent(this)
+        if (restoredIntent != null) {
+            android.util.Log.d(
+                "DndRuleCache",
+                "Cached rule payload restored for service start: location=${restoredIntent.getStringArrayExtra("locIds")?.size ?: 0}"
+            )
+        }
+        return restoredIntent
     }
 
     private fun logSyncedRuleExceptions() {
@@ -274,38 +318,71 @@ class DndForegroundService : Service() {
     }
 
     private fun setupGeofences(ids: Array<String>, lats: DoubleArray, lngs: DoubleArray, rads: IntArray) {
+        val requestedCount = ids.size
+        android.util.Log.d(
+            "DndGeofence",
+            "Geofence setup requested: count=$requestedCount, initialTriggerEnter=true"
+        )
+
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            android.util.Log.e("DndGeofence", "Permission ACCESS_FINE_LOCATION is missing!")
-            return 
+            android.util.Log.e(
+                "DndGeofence",
+                "Geofence registration skipped: ACCESS_FINE_LOCATION is missing. Existing active geofence state preserved."
+            )
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            android.util.Log.w(
+                "DndGeofence",
+                "ACCESS_BACKGROUND_LOCATION is missing. Geofences will be registered, but background delivery may not work reliably."
+            )
         }
         
         val pendingIntent = getGeofencePendingIntent()
-        geofencingClient.removeGeofences(pendingIntent) 
-
-        // Reset PERSISTENT state
-        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
-        prefs.edit()
-            .putBoolean("isInsideGeofence", false)
-            .putStringSet("activeGeofenceIds", emptySet<String>())
-            .apply()
-
-        isInsideGeofence = false 
 
         if (ids.isEmpty()) {
-            android.util.Log.d("DndGeofence", "No locations to monitor.")
+            android.util.Log.d("DndGeofence", "No enabled location rules to monitor. Removing registered geofences and clearing active state.")
+            removeRegisteredGeofences(
+                pendingIntent,
+                "no-enabled-location-rules",
+                clearStateOnSuccess = true
+            )
             return
         }
 
         val geofenceList = mutableListOf<Geofence>()
         for (i in ids.indices) {
+            val latitude = lats.getOrNull(i)
+            val longitude = lngs.getOrNull(i)
+            val radius = rads.getOrNull(i)
+            if (latitude == null || longitude == null || radius == null) {
+                android.util.Log.w(
+                    "DndGeofence",
+                    "Skipping malformed geofence at index=$i: id=${ids[i]}, hasLat=${latitude != null}, hasLng=${longitude != null}, hasRadius=${radius != null}"
+                )
+                continue
+            }
+            val ruleName = activeLocationRules.firstOrNull { it.id == ids[i] }?.name ?: "unknown"
+            android.util.Log.d(
+                "DndGeofence",
+                "Preparing geofence: id=${ids[i]}, name=$ruleName, radius=${radius}m"
+            )
             geofenceList.add(
                 Geofence.Builder()
                     .setRequestId(ids[i])
-                    .setCircularRegion(lats[i], lngs[i], rads[i].toFloat())
+                    .setCircularRegion(latitude, longitude, radius.toFloat())
                     .setExpirationDuration(Geofence.NEVER_EXPIRE)
                     .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
                     .build()
             )
+        }
+
+        if (geofenceList.isEmpty()) {
+            android.util.Log.w("DndGeofence", "No valid geofences were built. Existing active geofence state preserved.")
+            return
         }
 
         val geofencingRequest = GeofencingRequest.Builder()
@@ -313,14 +390,74 @@ class DndForegroundService : Service() {
             .addGeofences(geofenceList)
             .build()
 
-        geofencingClient.addGeofences(geofencingRequest, pendingIntent).run {
-            addOnSuccessListener {
-                android.util.Log.d("DndGeofence", "Successfully added ${ids.size} geofences.")
-            }
-            addOnFailureListener {
-                android.util.Log.e("DndGeofence", "Failed to add geofences: ${it.message}")
+        val registerGeofences: () -> Unit = {
+            geofencingClient.addGeofences(geofencingRequest, pendingIntent).run {
+                addOnSuccessListener {
+                    clearActiveGeofenceState("registration-success")
+                    android.util.Log.d(
+                        "DndGeofence",
+                        "Geofence registration succeeded: requested=$requestedCount, registered=${geofenceList.size}, initialTriggerEnter=true"
+                    )
+                }
+                addOnFailureListener { exception ->
+                    android.util.Log.e(
+                        "DndGeofence",
+                        "Geofence registration failed: requested=$requestedCount, built=${geofenceList.size}, initialTriggerEnter=true, ${geofenceExceptionDetails(exception)}. Previous active geofence state preserved."
+                    )
+                }
             }
         }
+
+        removeRegisteredGeofences(
+            pendingIntent,
+            "refresh-before-register",
+            clearStateOnSuccess = false,
+            afterComplete = registerGeofences
+        )
+    }
+
+    private fun removeRegisteredGeofences(
+        pendingIntent: PendingIntent,
+        reason: String,
+        clearStateOnSuccess: Boolean,
+        afterComplete: (() -> Unit)? = null
+    ) {
+        android.util.Log.d(
+            "DndGeofence",
+            "Geofence remove requested: reason=$reason, clearStateOnSuccess=$clearStateOnSuccess"
+        )
+        geofencingClient.removeGeofences(pendingIntent)
+            .addOnSuccessListener {
+                android.util.Log.d("DndGeofence", "Geofence remove succeeded: reason=$reason")
+                if (clearStateOnSuccess) {
+                    clearActiveGeofenceState("remove-success:$reason")
+                }
+                afterComplete?.invoke()
+            }
+            .addOnFailureListener { exception ->
+                android.util.Log.e(
+                    "DndGeofence",
+                    "Geofence remove failed: reason=$reason, ${geofenceExceptionDetails(exception)}"
+                )
+                afterComplete?.invoke()
+            }
+    }
+
+    private fun clearActiveGeofenceState(reason: String) {
+        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean("isInsideGeofence", false)
+            .putStringSet("activeGeofenceIds", emptySet<String>())
+            .apply()
+
+        isInsideGeofence = false
+        android.util.Log.d("DndGeofence", "Active geofence state cleared: reason=$reason")
+    }
+
+    private fun geofenceExceptionDetails(exception: Exception): String {
+        val statusCode = (exception as? ApiException)?.statusCode
+        val statusText = statusCode?.let { ", statusCode=$it" } ?: ""
+        return "exception=${exception::class.java.simpleName}$statusText, message=${exception.message}"
     }
 
     private fun getGeofencePendingIntent(): PendingIntent {
@@ -336,11 +473,12 @@ class DndForegroundService : Service() {
         // Reduced polling to 10 seconds so game launching detects quickly
         timer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                checkAndToggleDnd()
+                checkAndToggleDnd("timer")
             }
         }, 0, 3000)
     }
 
+    @Suppress("DEPRECATION")
     private fun currentForegroundAppPackage(): String? {
         if (targetAppPackages.isEmpty()) return null
 
@@ -350,20 +488,24 @@ class DndForegroundService : Service() {
 
         val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
         var currentForegroundApp: String? = null
+        var currentForegroundEventTime = 0L
         val event = UsageEvents.Event()
 
-        // Iterate through all events to find the most recent state
         while (usageEvents.hasNextEvent()) {
             usageEvents.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+            if (
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            ) {
                 currentForegroundApp = event.packageName
-            } else if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED) {
-                if (currentForegroundApp == event.packageName) {
-                    currentForegroundApp = null
-                }
+                currentForegroundEventTime = event.timeStamp
             }
         }
 
+        android.util.Log.d(
+            "DndActivity",
+            "Current foreground package=$currentForegroundApp, eventTime=$currentForegroundEventTime, targetAppPackages=${targetAppPackages.joinToString()}"
+        )
         return currentForegroundApp
     }
 
@@ -416,6 +558,10 @@ class DndForegroundService : Service() {
 
         try {
             notificationManager.setNotificationPolicy(policy)
+            android.util.Log.d(
+                "DndExceptions",
+                "DND policy applied for matches=${matchingRuleNames.joinToString()}, starred=$allowStarredContacts, repeat=$allowRepeatCallers"
+            )
         } catch (e: SecurityException) {
             android.util.Log.e("DndExceptions", "Failed to apply DND exception policy: ${e.message}")
         } catch (e: RuntimeException) {
@@ -423,10 +569,63 @@ class DndForegroundService : Service() {
         }
     }
 
-    private fun checkAndToggleDnd() {
+    private fun cancelPendingDisableIfAny(
+        source: String,
+        timeMatched: Boolean,
+        locationMatched: Boolean,
+        appMatched: Boolean,
+        activityMatched: Boolean
+    ) {
+        val runnable = pendingDisableRunnable ?: return
+        disableGraceHandler.removeCallbacks(runnable)
+        pendingDisableRunnable = null
+        android.util.Log.d(
+            "DndActivity",
+            "DND disable cancelled: rule matched again. source=$source, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched"
+        )
+    }
+
+    private fun scheduleDisableAfterGrace(
+        source: String,
+        timeMatched: Boolean,
+        locationMatched: Boolean,
+        appMatched: Boolean,
+        activityMatched: Boolean,
+        currentForegroundPackage: String?,
+        isCurrentlyInsideGeofence: Boolean,
+        activeGeofenceIds: Set<String>,
+        currentActivityInt: Int
+    ) {
+        if (pendingDisableRunnable != null) {
+            android.util.Log.d(
+                "DndActivity",
+                "DND disable already pending: source=$source, graceMs=$DND_DISABLE_GRACE_MS, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched"
+            )
+            return
+        }
+
+        val runnable = Runnable {
+            pendingDisableRunnable = null
+            checkAndToggleDnd("disable-grace", allowDisableGrace = false)
+        }
+        pendingDisableRunnable = runnable
+        android.util.Log.d(
+            "DndActivity",
+            "DND disable delayed: no matching rules, waiting grace period. source=$source, graceMs=$DND_DISABLE_GRACE_MS, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, currentActivityInt=$currentActivityInt"
+        )
+        disableGraceHandler.postDelayed(runnable, DND_DISABLE_GRACE_MS)
+    }
+
+    private fun checkAndToggleDnd(
+        source: String,
+        allowDisableGrace: Boolean = true
+    ) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!notificationManager.isNotificationPolicyAccessGranted) {
-            android.util.Log.e("DndExceptions", "DND policy access missing; skipping DND evaluation.")
+            android.util.Log.e("DndExceptions", "DND policy access missing; skipping DND evaluation. source=$source")
+            pendingDisableRunnable?.let { disableGraceHandler.removeCallbacks(it) }
+            pendingDisableRunnable = null
+            AutomationDndStateStore.write(this, false, "")
             return
         }
 
@@ -463,7 +662,7 @@ class DndForegroundService : Service() {
         // 4. Activity Check with Logging
         val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
         
-        android.util.Log.d("DndActivity", "Evaluating Rules. Current stored Activity Int: $currentActivityInt. Target Types: ${targetActivityTypes.joinToString()}")
+        android.util.Log.d("DndActivity", "Evaluating Rules. source=$source, currentActivityInt=$currentActivityInt, targetActivityTypes=${targetActivityTypes.joinToString()}")
 
         val matchingActivityRules = targetActivityRules.filter {
             activityMatches(it.activityType, currentActivityInt)
@@ -477,8 +676,24 @@ class DndForegroundService : Service() {
             matchingActivityRules.map { it.name }
         val shouldBeActive = matchingRuleNames.isNotEmpty()
         val currentFilter = notificationManager.currentInterruptionFilter
+        val timeMatched = matchingTimeRules.isNotEmpty()
+        val locationMatched = matchingLocationRules.isNotEmpty()
+        val appMatched = matchingAppRules.isNotEmpty()
+        val activityMatched = matchingActivityRules.isNotEmpty()
+        android.util.Log.d(
+            "DndActivity",
+            "DND evaluation result: source=$source, shouldBeActive=$shouldBeActive, currentFilter=$currentFilter, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, targetAppPackages=${targetAppPackages.joinToString()}, matches=${matchingRuleNames.joinToString()}"
+        )
 
         if (shouldBeActive) {
+            cancelPendingDisableIfAny(
+                source,
+                timeMatched,
+                locationMatched,
+                appMatched,
+                activityMatched
+            )
+            val activeRuleNamesText = matchingRuleNames.joinToString()
             val allowStarredContacts =
                 matchingTimeRules.any { it.allowStarredContacts } ||
                 matchingLocationRules.any { it.allowStarredContacts } ||
@@ -498,12 +713,34 @@ class DndForegroundService : Service() {
             )
 
             if (currentFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
-                android.util.Log.d("DndActivity", "Enabling DND Mode.")
+                android.util.Log.d("DndActivity", "DND enabled by automation.")
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
             }
-        } else if (!shouldBeActive && currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
-            android.util.Log.d("DndActivity", "Disabling DND Mode.")
-            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            AutomationDndStateStore.write(this, true, activeRuleNamesText)
+        } else {
+            if (allowDisableGrace && currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+                scheduleDisableAfterGrace(
+                    source,
+                    timeMatched,
+                    locationMatched,
+                    appMatched,
+                    activityMatched,
+                    currentForegroundPackage,
+                    isCurrentlyInsideGeofence,
+                    activeGeofenceIds,
+                    currentActivityInt
+                )
+                return
+            }
+
+            if (currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+                android.util.Log.d(
+                    "DndActivity",
+                    "DND disabled after grace period: still no matching rules. source=$source, time=false, location=false, app=false, activity=false, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, targetAppPackages=${targetAppPackages.joinToString()}, currentActivityInt=$currentActivityInt"
+                )
+                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            }
+            AutomationDndStateStore.write(this, false, "")
         }
     }
 
@@ -512,8 +749,11 @@ class DndForegroundService : Service() {
         android.util.Log.w("DndService", "App swiped away! Requesting OS to keep service alive.")
         
         // Tells Android to restart this Foreground Service if the OS killed it
-        val restartServiceIntent = Intent(applicationContext, this.javaClass)
-        restartServiceIntent.setPackage(packageName)
+        val restartServiceIntent = Intent(applicationContext, this.javaClass).apply {
+            action = CachedRulePayloadStore.ACTION_RESTORE_FROM_CACHE
+            setPackage(packageName)
+        }
+        android.util.Log.d("DndRuleCache", "Service restart scheduled from onTaskRemoved with restore-from-cache action.")
         
         val restartServicePendingIntent = PendingIntent.getService(
             applicationContext,
@@ -532,13 +772,20 @@ class DndForegroundService : Service() {
 
     override fun onDestroy() {
         timer?.cancel()
+        pendingDisableRunnable?.let { disableGraceHandler.removeCallbacks(it) }
+        pendingDisableRunnable = null
         unregisterReceiver(geofenceUpdateReceiver)
-        geofencingClient.removeGeofences(getGeofencePendingIntent())
+        removeRegisteredGeofences(
+            getGeofencePendingIntent(),
+            "service-destroy",
+            clearStateOnSuccess = false
+        )
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (notificationManager.isNotificationPolicyAccessGranted) {
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
         }
+        AutomationDndStateStore.write(this, false, "")
         super.onDestroy()
     }
 

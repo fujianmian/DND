@@ -7,6 +7,7 @@ import '../database/database.dart';
 import '../main.dart';
 import '../models/rule.dart' as model;
 import '../models/rule_trigger_values.dart';
+import '../services/app_catalog.dart';
 import '../theme/app_theme.dart';
 import 'map_picker_screen.dart';
 
@@ -33,7 +34,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   int? _radius;
 
   String? _packageName;
-  List<Map<String, dynamic>> _installedApps = [];
+  List<AppCatalogEntry> _installedApps = [];
   bool _isLoadingApps = false;
   bool _isSaving = false;
 
@@ -294,7 +295,13 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
             ? 'Tap to select a location'
             : 'Lat: ${_latitude!.toStringAsFixed(4)}, Lng: ${_longitude!.toStringAsFixed(4)}',
       ),
-      subtitle: _radius == null ? null : Text('Radius: ${_radius}m'),
+      subtitle: _radius == null
+          ? null
+          : Text(
+              _radius! < 100
+                  ? 'Radius: ${_radius}m - 100m+ recommended for reliability'
+                  : 'Radius: ${_radius}m',
+            ),
       trailing: const Icon(Icons.chevron_right),
       onTap: _selectLocationOnMap,
     );
@@ -310,15 +317,15 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
 
     return DropdownButtonFormField<String>(
       key: ValueKey(_packageName),
-      initialValue: _installedApps.any((app) => app['package'] == _packageName)
+      initialValue: _installedApps.any((app) => app.packageName == _packageName)
           ? _packageName
           : null,
       isExpanded: true,
       decoration: _inputDecoration('Select App to Trigger DND'),
       items: _installedApps.map((app) {
-        final Uint8List? iconBytes = app['icon'] as Uint8List?;
+        final Uint8List? iconBytes = app.iconBytes;
         return DropdownMenuItem<String>(
-          value: app['package'] as String,
+          value: app.packageName,
           child: Row(
             children: [
               if (iconBytes != null)
@@ -326,12 +333,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
               else
                 const Icon(Icons.android, size: 26, color: Colors.green),
               const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  app['name'] as String,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+              Expanded(child: Text(app.name, overflow: TextOverflow.ellipsis)),
             ],
           ),
         );
@@ -452,15 +454,8 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
         await _fetchInstalledApps();
       }
     } else if (val == model.TriggerType.location) {
-      final status = await Permission.location.request();
-      if (!status.isGranted) {
-        _showPermissionDialog(
-          'Location Required',
-          'To trigger DND by location, please grant Location permissions.',
-          () => openAppSettings(),
-        );
-        return;
-      }
+      final hasLocationPermission = await _ensureForegroundLocationPermission();
+      if (!hasLocationPermission) return;
     } else if (val == model.TriggerType.activity) {
       final status = await Permission.activityRecognition.request();
       if (!status.isGranted) {
@@ -479,12 +474,10 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   Future<void> _fetchInstalledApps() async {
     setState(() => _isLoadingApps = true);
     try {
-      final List<dynamic> apps = await platform.invokeMethod(
-        'getInstalledApps',
-      );
+      final apps = await appCatalog.loadInstalledApps();
       if (!mounted) return;
       setState(() {
-        _installedApps = apps.map((e) => Map<String, dynamic>.from(e)).toList();
+        _installedApps = apps;
         _isLoadingApps = false;
       });
     } catch (e) {
@@ -494,6 +487,10 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   }
 
   Future<void> _selectLocationOnMap() async {
+    final hasLocationPermission = await _ensureForegroundLocationPermission();
+    if (!hasLocationPermission) return;
+    if (!mounted) return;
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -519,6 +516,16 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     if (!_formKey.currentState!.validate() || error != null) {
       _showSnackBar(error ?? 'Please complete the rule name.');
       return;
+    }
+
+    if (_selectedType == model.TriggerType.location) {
+      final hasLocationPermission = await _ensureForegroundLocationPermission();
+      if (!hasLocationPermission) return;
+
+      final hasBackgroundLocation =
+          await _ensureBackgroundLocationForActiveRule();
+      if (!hasBackgroundLocation) return;
+      if (!mounted) return;
     }
 
     setState(() => _isSaving = true);
@@ -585,6 +592,38 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     );
   }
 
+  Future<bool> _ensureForegroundLocationPermission() async {
+    var status = await Permission.location.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.location.request();
+    if (status.isGranted) return true;
+
+    if (!mounted) return false;
+    _showPermissionDialog(
+      'Location Permission Needed',
+      'Allow location access to choose places for location rules.',
+      () => openAppSettings(),
+    );
+    return false;
+  }
+
+  Future<bool> _ensureBackgroundLocationForActiveRule() async {
+    var status = await Permission.locationAlways.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.locationAlways.request();
+    if (status.isGranted) return true;
+
+    if (!mounted) return false;
+    _showPermissionDialog(
+      'Background Location Needed',
+      'Allow all-the-time location so this rule can activate when Quietly is not open.',
+      () => openAppSettings(),
+    );
+    return false;
+  }
+
   void _clearTrigger() {
     setState(() {
       _selectedType = null;
@@ -611,6 +650,9 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
         if (_latitude == null || _longitude == null || _radius == null) {
           return 'Please select a location and radius.';
         }
+        if (_radius! < 50) {
+          return 'Please select a radius of at least 50m.';
+        }
         return null;
       case model.TriggerType.app:
         if (_packageName == null || _packageName!.isEmpty) {
@@ -632,7 +674,9 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
         final end = _endTime?.format(context) ?? '--';
         return 'Time: $start - $end';
       case model.TriggerType.location:
-        return _radius == null ? 'Location' : 'Location: ${_radius}m radius';
+        if (_radius == null) return 'Location';
+        final recommendation = _radius! < 100 ? ' (100m+ recommended)' : '';
+        return 'Location: ${_radius}m radius$recommendation';
       case model.TriggerType.app:
         return 'App: ${_selectedAppName() ?? 'Select app'}';
       case model.TriggerType.activity:
@@ -643,10 +687,8 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   }
 
   String? _selectedAppName() {
-    for (final app in _installedApps) {
-      if (app['package'] == _packageName) return app['name'] as String?;
-    }
-    return null;
+    if (_packageName == null || _packageName!.isEmpty) return null;
+    return appCatalog.labelFor(_packageName);
   }
 
   IconData _triggerIcon(model.TriggerType type) {
