@@ -14,21 +14,29 @@ import '../theme/app_theme.dart';
 import '../widgets/calendar_trigger_fields.dart';
 import 'map_picker_screen.dart';
 
-class CreateRuleWizard extends StatefulWidget {
-  const CreateRuleWizard({super.key});
+class MultiTriggerRuleFormScreen extends StatefulWidget {
+  const MultiTriggerRuleFormScreen({super.key, required this.ruleWithTriggers});
+
+  final RuleWithTriggers ruleWithTriggers;
 
   @override
-  State<CreateRuleWizard> createState() => _CreateRuleWizardState();
+  State<MultiTriggerRuleFormScreen> createState() =>
+      _MultiTriggerRuleFormScreenState();
 }
 
-class _CreateRuleWizardState extends State<CreateRuleWizard> {
+class _MultiTriggerRuleFormScreenState
+    extends State<MultiTriggerRuleFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
   static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
 
-  int _currentStep = 0;
-  int _matchType = 0;
-  final List<_ConditionDraft> _conditions = [_ConditionDraft()];
+  late final TextEditingController _nameController;
+  late final int _ruleId;
+  late int _matchType;
+  late bool _isEnabled;
+  late bool _allowStarredContacts;
+  late bool _allowRepeatCallers;
+  late int _priority;
+  late List<_ConditionDraft> _conditions;
 
   List<AppCatalogEntry> _installedApps = [];
   bool _isLoadingApps = false;
@@ -36,11 +44,6 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   bool _isCalendarAuthBusy = false;
   CalendarConnectionMetadata _calendarMetadata =
       const CalendarConnectionMetadata(connected: false);
-
-  bool _allowStarredContacts = false;
-  bool _allowRepeatCallers = false;
-  int _priority = rulePriorityTime;
-  bool _priorityManuallySelected = false;
 
   final Map<String, String> _availableActivities = {
     'IN_VEHICLE': 'In Vehicle',
@@ -54,6 +57,24 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   @override
   void initState() {
     super.initState();
+    final entry = widget.ruleWithTriggers;
+    final rule = entry.rule;
+    _ruleId = rule.id;
+    _nameController = TextEditingController(text: rule.name);
+    _matchType = rule.matchType == 1 ? 1 : 0;
+    _isEnabled = rule.isEnabled;
+    _allowStarredContacts = rule.allowStarredContacts;
+    _allowRepeatCallers = rule.allowRepeatCallers;
+    _priority = rule.priority;
+
+    final drafts = entry.triggers.isEmpty
+        ? [RuleTriggerDraft.fromLegacyRule(rule)]
+        : entry.triggers.map(RuleTriggerDraft.fromRuleTrigger).toList();
+    _conditions = drafts.map(_ConditionDraft.fromDraft).toList();
+
+    if (_conditions.any((condition) => condition.triggerType == 2)) {
+      _fetchInstalledApps();
+    }
     _loadCalendarMetadata();
   }
 
@@ -71,145 +92,100 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Rule')),
-      body: SafeArea(
-        top: false,
-        child: Form(
-          key: _formKey,
-          child: Stepper(
-            currentStep: _currentStep,
-            onStepContinue: _handleContinue,
-            onStepCancel: () {
-              if (_currentStep > 0) setState(() => _currentStep -= 1);
-            },
-            controlsBuilder: (context, details) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 24.0),
-                child: Row(
-                  children: [
-                    ElevatedButton(
-                      onPressed: _isSaving ? null : details.onStepContinue,
-                      child: _isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(_currentStep == 2 ? 'Save rule' : 'Continue'),
-                    ),
-                    const SizedBox(width: 12),
-                    if (_currentStep > 0)
-                      TextButton(
-                        onPressed: _isSaving ? null : details.onStepCancel,
-                        child: Text(
-                          'Back',
-                          style: TextStyle(
-                            color: AppTheme.pureBlack.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-            steps: [
-              Step(
-                title: const Text(
-                  'Rule details',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
-                content: TextFormField(
-                  controller: _nameController,
-                  style: const TextStyle(color: AppTheme.pureBlack),
-                  decoration: _inputDecoration('e.g., Deep Work'),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Enter a rule name';
-                    }
-                    return null;
-                  },
-                ),
-                isActive: _currentStep >= 0,
-              ),
-              Step(
-                title: const Text(
-                  'Conditions',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
-                content: _buildConditionsStep(),
-                isActive: _currentStep >= 1,
-              ),
-              Step(
-                title: const Text(
-                  'Priority & exceptions',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
-                content: _buildActionExceptions(),
-                isActive: _currentStep >= 2,
-              ),
-            ],
+      appBar: AppBar(
+        title: const Text('Edit Rule'),
+        actions: [
+          IconButton(
+            tooltip: 'Delete rule',
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: _showDeleteConfirmation,
           ),
+        ],
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            AppTheme.pagePadding,
+            AppTheme.pagePadding,
+            AppTheme.pagePadding,
+            AppTheme.sectionGap + bottomSafePadding,
+          ),
+          children: [
+            _sectionTitle('Rule details'),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Rule Name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) =>
+                  value == null || value.trim().isEmpty ? 'Enter a name' : null,
+            ),
+            const SizedBox(height: 16),
+            _buildEnabledSwitch(),
+            const SizedBox(height: AppTheme.sectionGap),
+            _sectionTitle('Match type'),
+            const SizedBox(height: 8),
+            _buildMatchTypeSelector(),
+            const SizedBox(height: 16),
+            _buildMatchTypeHelper(),
+            const SizedBox(height: AppTheme.sectionGap),
+            _sectionTitle('Conditions'),
+            const SizedBox(height: 12),
+            ..._conditions.asMap().entries.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildConditionCard(entry.key, entry.value),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _addCondition,
+              icon: const Icon(Icons.add, color: AppTheme.logoBlue),
+              label: const Text(
+                'Add condition',
+                style: TextStyle(color: AppTheme.logoBlue),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppTheme.logoBlue),
+              ),
+            ),
+            const SizedBox(height: AppTheme.sectionGap),
+            _sectionTitle('Priority'),
+            const SizedBox(height: 8),
+            _buildPrioritySelector(),
+            const SizedBox(height: AppTheme.sectionGap),
+            _buildExceptionControls(),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+              ),
+              onPressed: _isSaving ? null : _saveRule,
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Update rule'),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  InputDecoration _inputDecoration(String hintText) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.3)),
-      filled: true,
-      fillColor: AppTheme.pureWhite,
-      enabledBorder: OutlineInputBorder(
-        borderRadius: AppTheme.cardBorderRadius,
-        borderSide: BorderSide(
-          color: AppTheme.pureBlack.withValues(alpha: 0.2),
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: AppTheme.cardBorderRadius,
-        borderSide: const BorderSide(color: AppTheme.logoBlue),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: AppTheme.cardBorderRadius,
-        borderSide: const BorderSide(color: Colors.red),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: AppTheme.cardBorderRadius,
-        borderSide: const BorderSide(color: Colors.red),
-      ),
-    );
-  }
-
-  Widget _buildConditionsStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('Match type'),
-        const SizedBox(height: 8),
-        _buildMatchTypeSelector(),
-        const SizedBox(height: 16),
-        _buildMatchTypeHelper(),
-        const SizedBox(height: 16),
-        ..._conditions.asMap().entries.map(
-          (entry) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildConditionCard(entry.key, entry.value),
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: _addCondition,
-          icon: const Icon(Icons.add, color: AppTheme.logoBlue),
-          label: const Text(
-            'Add condition',
-            style: TextStyle(color: AppTheme.logoBlue),
-          ),
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: AppTheme.logoBlue),
-          ),
-        ),
-      ],
+  Widget _buildEnabledSwitch() {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Rule enabled'),
+      value: _isEnabled,
+      onChanged: (value) => setState(() => _isEnabled = value),
     );
   }
 
@@ -240,7 +216,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
           _matchType == 0
               ? 'Quietly will activate this rule when any condition matches.'
               : 'Quietly will activate this rule only when all conditions match.',
-          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.6)),
+          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
         ),
       ],
     );
@@ -255,7 +231,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
 
     return Text(
       message,
-      style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.6)),
+      style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
     );
   }
 
@@ -276,10 +252,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
                     children: [
                       Text(
                         'Condition ${index + 1}',
-                        style: const TextStyle(
-                          color: AppTheme.pureBlack,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -313,11 +286,14 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             DropdownButtonFormField<model.TriggerType>(
               initialValue: triggerType,
               isExpanded: true,
-              decoration: _inputDecoration('Trigger type'),
+              decoration: const InputDecoration(
+                labelText: 'Trigger Type',
+                border: OutlineInputBorder(),
+              ),
               items: model.TriggerType.values
                   .map(
                     (type) => DropdownMenuItem(
@@ -441,7 +417,10 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
           ? condition.packageName
           : null,
       isExpanded: true,
-      decoration: _inputDecoration('Select App to Trigger DND'),
+      decoration: const InputDecoration(
+        labelText: 'Select App to Trigger DND',
+        border: OutlineInputBorder(),
+      ),
       items: _installedApps.map((app) {
         final Uint8List? iconBytes = app.iconBytes;
         return DropdownMenuItem<String>(
@@ -468,7 +447,10 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     return DropdownButtonFormField<String>(
       key: ValueKey('activity-$index-${condition.activityType}'),
       initialValue: condition.activityType,
-      decoration: _inputDecoration('Select an Activity'),
+      decoration: const InputDecoration(
+        labelText: 'Select an Activity',
+        border: OutlineInputBorder(),
+      ),
       items: _availableActivities.entries
           .map(
             (entry) => DropdownMenuItem<String>(
@@ -500,57 +482,29 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     );
   }
 
-  Widget _buildActionExceptions() {
+  Widget _buildExceptionControls() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('Priority'),
+        const Text('Exceptions', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        _buildPrioritySelector(
-          value: _effectivePriority,
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _priority = value;
-              _priorityManuallySelected = true;
-            });
-          },
-        ),
-        const SizedBox(height: AppTheme.sectionGap),
-        _sectionTitle('Exceptions'),
-        const SizedBox(height: 12),
         Text(
           'These apply when this rule is the primary active rule.',
           style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
         ),
         const SizedBox(height: 8),
         Card(
-          margin: EdgeInsets.zero,
           child: Column(
             children: [
               SwitchListTile(
-                title: const Text(
-                  'Allow starred contacts',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
+                title: const Text('Allow starred contacts'),
                 value: _allowStarredContacts,
                 onChanged: (val) => setState(() => _allowStarredContacts = val),
               ),
-              Divider(
-                height: 1,
-                color: AppTheme.pureBlack.withValues(alpha: 0.1),
-              ),
+              const Divider(height: 1),
               SwitchListTile(
-                title: const Text(
-                  'Allow repeat callers',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
-                subtitle: Text(
-                  'If they call twice in 15 mins',
-                  style: TextStyle(
-                    color: AppTheme.pureBlack.withValues(alpha: 0.62),
-                  ),
-                ),
+                title: const Text('Allow repeat callers'),
+                subtitle: const Text('If they call twice in 15 mins'),
                 value: _allowRepeatCallers,
                 onChanged: (val) => setState(() => _allowRepeatCallers = val),
               ),
@@ -561,19 +515,19 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     );
   }
 
-  Widget _buildPrioritySelector({
-    required int value,
-    required ValueChanged<int?> onChanged,
-  }) {
-    final choices = {...rulePriorityChoices, value}.toList()..sort();
+  Widget _buildPrioritySelector() {
+    final choices = {...rulePriorityChoices, _priority}.toList()..sort();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<int>(
-          key: ValueKey('priority-$value'),
-          initialValue: value,
-          decoration: _inputDecoration('Priority'),
+          key: ValueKey('priority-$_priority'),
+          initialValue: _priority,
+          decoration: const InputDecoration(
+            labelText: 'Priority',
+            border: OutlineInputBorder(),
+          ),
           items: choices
               .map(
                 (priority) => DropdownMenuItem<int>(
@@ -582,7 +536,10 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
                 ),
               )
               .toList(),
-          onChanged: onChanged,
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _priority = value);
+          },
         ),
         const SizedBox(height: 8),
         Text(
@@ -639,27 +596,6 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     }
   }
 
-  Future<void> _handleContinue() async {
-    if (_currentStep == 0) {
-      if (_formKey.currentState!.validate()) {
-        setState(() => _currentStep = 1);
-      }
-      return;
-    }
-
-    if (_currentStep == 1) {
-      final error = _draftValidationError();
-      if (error != null) {
-        _showSnackBar(error);
-        return;
-      }
-      setState(() => _currentStep = 2);
-      return;
-    }
-
-    await _saveRule();
-  }
-
   Future<void> _handleConditionTypeChange(
     int index,
     model.TriggerType? val,
@@ -669,9 +605,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     if (val == model.TriggerType.app) {
       final hasPermission = await _ensureUsagePermission();
       if (!hasPermission) return;
-      if (_installedApps.isEmpty) {
-        await _fetchInstalledApps();
-      }
+      if (_installedApps.isEmpty) await _fetchInstalledApps();
     } else if (val == model.TriggerType.location) {
       final hasLocationPermission = await _ensureForegroundLocationPermission();
       if (!hasLocationPermission) return;
@@ -705,7 +639,24 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   Future<void> _fetchInstalledApps() async {
     setState(() => _isLoadingApps = true);
     try {
-      final apps = await appCatalog.loadInstalledApps();
+      var apps = await appCatalog.loadInstalledApps();
+      final selectedPackages = _conditions
+          .map((condition) => condition.packageName)
+          .whereType<String>()
+          .where((packageName) => packageName.isNotEmpty)
+          .toSet();
+
+      for (final packageName in selectedPackages) {
+        if (!apps.any((app) => app.packageName == packageName)) {
+          final selectedApp = await appCatalog.loadAppInfo(packageName);
+          apps = [
+            ...apps,
+            selectedApp ??
+                AppCatalogEntry(packageName: packageName, name: packageName),
+          ];
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _installedApps = apps;
@@ -757,17 +708,17 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
 
     setState(() => _isSaving = true);
     try {
-      final baseRule = RulesCompanion.insert(
-        name: _nameController.text.trim(),
-        type: drafts.first.triggerType,
-        isEnabled: const d.Value(true),
+      final baseRule = const RulesCompanion().copyWith(
+        name: d.Value(_nameController.text.trim()),
+        isEnabled: d.Value(_isEnabled),
         matchType: d.Value(_matchType),
-        priority: d.Value(_effectivePriority),
+        priority: d.Value(_priority),
         allowStarredContacts: d.Value(_allowStarredContacts),
         allowRepeatCallers: d.Value(_allowRepeatCallers),
       );
 
-      await database.createRuleWithTriggers(
+      await database.updateRuleWithTriggers(
+        ruleId: _ruleId,
         rule: withFirstTriggerLegacyFields(baseRule, drafts.first),
         triggers: drafts.map((draft) => draft.toCompanion()).toList(),
       );
@@ -786,9 +737,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     if (drafts.any((draft) => draft.triggerType == RuleTriggerDraft.app)) {
       final hasPermission = await _ensureUsagePermission();
       if (!hasPermission) return false;
-      if (_installedApps.isEmpty) {
-        await _fetchInstalledApps();
-      }
+      if (_installedApps.isEmpty) await _fetchInstalledApps();
     }
 
     if (drafts.any((draft) => draft.triggerType == RuleTriggerDraft.activity)) {
@@ -800,12 +749,15 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
       final hasLocationPermission = await _ensureForegroundLocationPermission();
       if (!hasLocationPermission) return false;
 
-      final hasBackgroundLocation =
-          await _ensureBackgroundLocationForActiveRule();
-      if (!hasBackgroundLocation) return false;
+      if (_isEnabled) {
+        final hasBackgroundLocation =
+            await _ensureBackgroundLocationForActiveRule();
+        if (!hasBackgroundLocation) return false;
+      }
     }
 
-    if (drafts.any((draft) => draft.triggerType == RuleTriggerDraft.calendar)) {
+    if (_isEnabled &&
+        drafts.any((draft) => draft.triggerType == RuleTriggerDraft.calendar)) {
       final connected = await calendarAuthService.isConnected();
       if (!connected) {
         _showSnackBar(
@@ -826,7 +778,14 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     )) {
       return;
     }
-    if (!await calendarAuthService.isConnected()) return;
+    if (!await calendarAuthService.isConnected()) {
+      if (mounted) {
+        _showSnackBar(
+          'Calendar rule saved disabled. Connect Google Calendar before enabling it.',
+        );
+      }
+      return;
+    }
 
     final result = await CalendarEventSyncService(
       database: database,
@@ -864,33 +823,6 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     return false;
   }
 
-  void _showPermissionDialog(
-    String title,
-    String content,
-    VoidCallback onConfirm,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              onConfirm();
-            },
-            child: const Text('Open Settings'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<bool> _ensureForegroundLocationPermission() async {
     var status = await Permission.location.status;
     if (status.isGranted) return true;
@@ -923,6 +855,33 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     return false;
   }
 
+  void _showPermissionDialog(
+    String title,
+    String content,
+    VoidCallback onConfirm,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onConfirm();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _addCondition() {
     setState(() => _conditions.add(_ConditionDraft()));
   }
@@ -943,9 +902,33 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     return _conditions.map((condition) => condition.toDraft(context)).toList();
   }
 
-  int get _effectivePriority {
-    if (_priorityManuallySelected) return _priority;
-    return priorityForDrafts(_toRuleTriggerDrafts());
+  void _deleteRule() async {
+    await database.deleteRuleAndTriggers(_ruleId);
+    await automationManager.syncRulesToAndroid();
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _showDeleteConfirmation() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Rule?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteRule();
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   IconData _triggerIcon(model.TriggerType type) {
@@ -1018,7 +1001,37 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
 }
 
 class _ConditionDraft {
-  _ConditionDraft({this.triggerType});
+  _ConditionDraft({
+    this.triggerType,
+    this.startTime,
+    this.endTime,
+    this.latitude,
+    this.longitude,
+    this.radius,
+    this.packageName,
+    this.activityType,
+    this.calendarId,
+    this.calendarKeyword,
+    this.calendarIncludeAllDay = false,
+    this.calendarLookaheadHours,
+  });
+
+  factory _ConditionDraft.fromDraft(RuleTriggerDraft draft) {
+    return _ConditionDraft(
+      triggerType: draft.triggerType,
+      startTime: _parseTimeStringStatic(draft.startTime),
+      endTime: _parseTimeStringStatic(draft.endTime),
+      latitude: draft.latitude,
+      longitude: draft.longitude,
+      radius: draft.radius?.round(),
+      packageName: draft.packageName,
+      activityType: draft.activityType,
+      calendarId: draft.calendarId,
+      calendarKeyword: draft.calendarKeyword,
+      calendarIncludeAllDay: draft.calendarIncludeAllDay,
+      calendarLookaheadHours: draft.calendarLookaheadHours,
+    );
+  }
 
   int? triggerType;
   TimeOfDay? startTime;
@@ -1030,7 +1043,7 @@ class _ConditionDraft {
   String? activityType;
   String? calendarId;
   String? calendarKeyword;
-  bool calendarIncludeAllDay = false;
+  bool calendarIncludeAllDay;
   int? calendarLookaheadHours;
 
   RuleTriggerDraft toDraft(BuildContext context) {
@@ -1048,5 +1061,22 @@ class _ConditionDraft {
       calendarIncludeAllDay: calendarIncludeAllDay,
       calendarLookaheadHours: calendarLookaheadHours,
     );
+  }
+
+  static TimeOfDay? _parseTimeStringStatic(String? timeStr) {
+    if (timeStr == null) return null;
+    try {
+      final parts = timeStr.split(':');
+      var hour = int.parse(parts[0]);
+      final minuteParts = parts[1].split(' ');
+      final minute = int.parse(minuteParts[0]);
+
+      if (timeStr.contains('PM') && hour != 12) hour += 12;
+      if (timeStr.contains('AM') && hour == 12) hour = 0;
+
+      return TimeOfDay(hour: hour, minute: minute);
+    } catch (_) {
+      return null;
+    }
   }
 }

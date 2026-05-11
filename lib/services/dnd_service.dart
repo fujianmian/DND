@@ -264,6 +264,8 @@ class DndService {
     List<Map<String, dynamic>> locRules,
     List<Map<String, dynamic>> appRules,
     List<Map<String, dynamic>> activityRules,
+    String automationRulesJson,
+    String calendarBusyWindowsJson,
   ) async {
     try {
       final timeRuleIds = timeRules.map((e) => e['id'] as String).toList();
@@ -347,6 +349,8 @@ class DndService {
         'activityTypes': activityTypes,
         'activityAllowStarredContacts': activityAllowStarredContacts,
         'activityAllowRepeatCallers': activityAllowRepeatCallers,
+        'automationRulesJson': automationRulesJson,
+        'calendarBusyWindowsJson': calendarBusyWindowsJson,
       });
       debugPrint("Successfully synced ALL rules to Android Service.");
     } on PlatformException catch (e) {

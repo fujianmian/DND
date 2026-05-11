@@ -289,6 +289,8 @@ class MainActivity: FlutterActivity() {
                     val activityTypes = call.argument<ArrayList<String>>("activityTypes")?.toTypedArray() ?: emptyArray()   
                     val activityAllowStarredContacts = booleanArrayArg(call, "activityAllowStarredContacts")
                     val activityAllowRepeatCallers = booleanArrayArg(call, "activityAllowRepeatCallers")
+                    val automationRulesJson = call.argument<String>("automationRulesJson") ?: ""
+                    val calendarBusyWindowsJson = call.argument<String>("calendarBusyWindowsJson") ?: "[]"
 
                     // Pass ALL rules to the Foreground Service
                     val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
@@ -320,6 +322,8 @@ class MainActivity: FlutterActivity() {
                         putExtra("activityTypes", activityTypes)
                         putExtra("activityAllowStarredContacts", activityAllowStarredContacts)
                         putExtra("activityAllowRepeatCallers", activityAllowRepeatCallers)
+                        putExtra("automationRulesJson", automationRulesJson)
+                        putExtra("calendarBusyWindowsJson", calendarBusyWindowsJson)
                         CachedRulePayloadStore.markPayloadPresent(this)
                     }
                     CachedRulePayloadStore.saveFromIntent(this, serviceIntent)

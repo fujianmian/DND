@@ -26,6 +26,8 @@ object CachedRulePayloadStore {
         "activityTypes"
     )
 
+    private val STRING_VALUE_KEYS = listOf("automationRulesJson", "calendarBusyWindowsJson")
+
     private val INT_ARRAY_KEYS = listOf(
         "startHours",
         "startMinutes",
@@ -54,7 +56,7 @@ object CachedRulePayloadStore {
     fun hasRulePayload(intent: Intent?): Boolean {
         if (intent == null) return false
         if (intent.getBooleanExtra(EXTRA_PAYLOAD_PRESENT, false)) return true
-        return (STRING_ARRAY_KEYS + INT_ARRAY_KEYS + DOUBLE_ARRAY_KEYS + BOOLEAN_ARRAY_KEYS)
+        return (STRING_ARRAY_KEYS + STRING_VALUE_KEYS + INT_ARRAY_KEYS + DOUBLE_ARRAY_KEYS + BOOLEAN_ARRAY_KEYS)
             .any { intent.hasExtra(it) }
     }
 
@@ -62,6 +64,9 @@ object CachedRulePayloadStore {
         val payload = JSONObject()
         STRING_ARRAY_KEYS.forEach { key ->
             payload.put(key, JSONArray(intent.getStringArrayExtra(key)?.toList() ?: emptyList<String>()))
+        }
+        STRING_VALUE_KEYS.forEach { key ->
+            payload.put(key, intent.getStringExtra(key) ?: "")
         }
         INT_ARRAY_KEYS.forEach { key ->
             payload.put(key, JSONArray((intent.getIntArrayExtra(key) ?: intArrayOf()).toList()))
@@ -81,7 +86,7 @@ object CachedRulePayloadStore {
 
         Log.d(
             "DndRuleCache",
-            "Rule payload cached: time=${intent.getStringArrayExtra("timeRuleIds")?.size ?: 0}, location=${intent.getStringArrayExtra("locIds")?.size ?: 0}, app=${intent.getStringArrayExtra("appRuleIds")?.size ?: 0}, activity=${intent.getStringArrayExtra("activityRuleIds")?.size ?: 0}"
+            "Rule payload cached: time=${intent.getStringArrayExtra("timeRuleIds")?.size ?: 0}, location=${intent.getStringArrayExtra("locIds")?.size ?: 0}, app=${intent.getStringArrayExtra("appRuleIds")?.size ?: 0}, activity=${intent.getStringArrayExtra("activityRuleIds")?.size ?: 0}, groupedJsonLength=${intent.getStringExtra("automationRulesJson")?.length ?: 0}, calendarJsonLength=${intent.getStringExtra("calendarBusyWindowsJson")?.length ?: 0}"
         )
     }
 
@@ -101,6 +106,9 @@ object CachedRulePayloadStore {
                 STRING_ARRAY_KEYS.forEach { key ->
                     putExtra(key, payload.optJSONArray(key).toStringArray())
                 }
+                STRING_VALUE_KEYS.forEach { key ->
+                    putExtra(key, payload.optString(key, ""))
+                }
                 INT_ARRAY_KEYS.forEach { key ->
                     putExtra(key, payload.optJSONArray(key).toIntArray())
                 }
@@ -113,7 +121,7 @@ object CachedRulePayloadStore {
             }.also {
                 Log.d(
                     "DndRuleCache",
-                    "Cached rule payload restored: cachedAt=${prefs.getLong(KEY_CACHED_AT, 0L)}, location=${it.getStringArrayExtra("locIds")?.size ?: 0}"
+                    "Cached rule payload restored: cachedAt=${prefs.getLong(KEY_CACHED_AT, 0L)}, location=${it.getStringArrayExtra("locIds")?.size ?: 0}, groupedJsonLength=${it.getStringExtra("automationRulesJson")?.length ?: 0}, calendarJsonLength=${it.getStringExtra("calendarBusyWindowsJson")?.length ?: 0}"
                 )
             }
         } catch (e: Exception) {

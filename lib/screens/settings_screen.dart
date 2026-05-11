@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../main.dart';
 import '../services/app_catalog.dart';
+import '../services/calendar_auth_service.dart';
+import '../services/calendar_event_sync_service.dart';
 import '../services/dnd_service.dart';
 import '../theme/app_theme.dart';
 
@@ -28,6 +30,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _locationPermissionGranted = false;
   bool _backgroundLocationPermissionGranted = false;
   bool _activityRecognitionPermissionGranted = false;
+  bool _isCalendarAuthBusy = false;
+  bool _isCalendarSyncBusy = false;
+  CalendarConnectionMetadata _calendarMetadata =
+      const CalendarConnectionMetadata(connected: false);
+  CalendarEventSyncResult? _lastCalendarSyncResult;
   List<String> _keywords = const ['urgent', 'emergency', 'asap'];
   Set<String> _selectedPackages = {};
   List<AppCatalogEntry> _installedApps = [];
@@ -58,6 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     final settings = await DndService.getKeywordBypassSettings();
     final permissions = await _readPermissionStates();
+    final calendarMetadata = await calendarAuthService.getConnectionMetadata();
     final apps = await appCatalog.loadInstalledApps();
 
     if (!mounted) return;
@@ -66,6 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _keywords = settings.keywords;
       _selectedPackages = settings.packages.toSet();
       _applyPermissionStates(permissions);
+      _calendarMetadata = calendarMetadata;
       _installedApps = apps;
       _isLoading = false;
     });
@@ -210,6 +219,76 @@ class _SettingsScreenState extends State<SettingsScreen>
     await _refreshPermissionStates();
   }
 
+  Future<void> _connectCalendar() async {
+    setState(() => _isCalendarAuthBusy = true);
+    final result = await calendarAuthService.connect();
+    final metadata = await calendarAuthService.getConnectionMetadata();
+
+    if (!mounted) return;
+    setState(() {
+      _calendarMetadata = metadata;
+      _isCalendarAuthBusy = false;
+      _lastCalendarSyncResult = null;
+    });
+    _showSnackBar(
+      result.connected
+          ? 'Google Calendar connected as ${result.email}.'
+          : result.message,
+    );
+  }
+
+  Future<void> _disconnectCalendar() async {
+    setState(() => _isCalendarAuthBusy = true);
+    try {
+      await calendarAuthService.disconnect();
+      final metadata = await calendarAuthService.getConnectionMetadata();
+      if (!mounted) return;
+      setState(() {
+        _calendarMetadata = metadata;
+        _isCalendarAuthBusy = false;
+        _lastCalendarSyncResult = null;
+      });
+      _showSnackBar('Google Calendar disconnected.');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isCalendarAuthBusy = false);
+      _showSnackBar('Google Calendar could not be disconnected.');
+    }
+  }
+
+  Future<void> _refreshCalendarBusyWindows() async {
+    setState(() => _isCalendarSyncBusy = true);
+    final result = await CalendarEventSyncService(
+      database: database,
+    ).syncAllCalendarTriggerBusyWindows();
+
+    if (!mounted) return;
+    setState(() {
+      _lastCalendarSyncResult = result;
+      _isCalendarSyncBusy = false;
+    });
+    _showSnackBar(result.message);
+  }
+
+  String _calendarSyncStatusText() {
+    final result = _lastCalendarSyncResult;
+    if (result == null) {
+      return 'Ready to cache busy windows when Calendar triggers exist.';
+    }
+    if (result.fetchedAt != null) {
+      return 'Last refreshed ${_formatDateTime(result.fetchedAt!)}. '
+          '${result.insertedCount} cached, ${result.skippedCount} skipped.';
+    }
+    return result.message;
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
+        '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+  }
+
   String _appLabel(String packageName) {
     return appCatalog.labelFor(packageName);
   }
@@ -222,6 +301,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: _isLoading
@@ -229,12 +310,19 @@ class _SettingsScreenState extends State<SettingsScreen>
           : RefreshIndicator(
               onRefresh: _loadSettings,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(
+                  AppTheme.pagePadding,
+                  AppTheme.pagePadding,
+                  AppTheme.pagePadding,
+                  AppTheme.sectionGap + bottomSafePadding,
+                ),
                 children: [
                   _buildPrivacyHeader(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppTheme.sectionGap),
                   _buildPermissionsSection(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppTheme.sectionGap),
+                  _buildCalendarConnectionSection(),
+                  const SizedBox(height: AppTheme.sectionGap),
                   _buildKeywordBypassSection(),
                 ],
               ),
@@ -243,40 +331,37 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Widget _buildPrivacyHeader() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.logoBlue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.logoBlue.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.lock_outline, color: AppTheme.logoBlue),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Privacy First',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.pureBlack,
-                  ),
-                ),
-                Text(
-                  'All your automation data is stored securely and locally on your device.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.pureBlack.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Privacy note',
+          'Quietly keeps automation settings on this device.',
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(AppTheme.cardPadding),
+          decoration: BoxDecoration(
+            color: AppTheme.logoBlue.withValues(alpha: 0.1),
+            borderRadius: AppTheme.cardBorderRadius,
+            border: Border.all(color: AppTheme.logoBlue.withValues(alpha: 0.2)),
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_outline, color: AppTheme.logoBlue),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Rules, keywords, and monitored apps are stored locally. Notification text is checked on this device only.',
+                  style: TextStyle(
+                    color: AppTheme.pureBlack.withValues(alpha: 0.72),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -346,12 +431,9 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        _sectionHeader(
           'Permissions',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppTheme.pureBlack,
-          ),
+          'Required access for automation, emergency bypass, and trigger detection.',
         ),
         const SizedBox(height: 8),
         Card(child: Column(children: rows)),
@@ -372,10 +454,27 @@ class _SettingsScreenState extends State<SettingsScreen>
     String actionLabel = 'Open',
   }) {
     return ListTile(
-      leading: Icon(icon, color: AppTheme.logoPurple),
-      title: Text(title, style: const TextStyle(color: AppTheme.pureBlack)),
-      subtitle: Text(
-        granted ? 'Granted - $description' : 'Not granted - $description',
+      leading: Icon(
+        icon,
+        color: granted ? AppTheme.logoBlue : AppTheme.logoPurple,
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: AppTheme.pureBlack,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _statusPill(granted),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(description),
       ),
       trailing: granted
           ? const Icon(Icons.check_circle, color: AppTheme.logoCyan)
@@ -384,16 +483,134 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildCalendarConnectionSection() {
+    final connected = _calendarMetadata.connected;
+    final email = _calendarMetadata.email;
+    final statusText = connected && email != null
+        ? 'Connected as $email'
+        : connected
+        ? 'Connected'
+        : 'Not connected';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Google Calendar',
+          'Connect Google Calendar only if you want meeting-based DND automation.',
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: Icon(
+                  Icons.event_available,
+                  color: connected ? AppTheme.logoBlue : AppTheme.logoPurple,
+                ),
+                title: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Calendar connection',
+                        style: TextStyle(
+                          color: AppTheme.pureBlack,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    _connectionPill(connected),
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(statusText),
+                ),
+                trailing: TextButton(
+                  onPressed: _isCalendarAuthBusy
+                      ? null
+                      : connected
+                      ? _disconnectCalendar
+                      : _connectCalendar,
+                  child: _isCalendarAuthBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(connected ? 'Disconnect' : 'Connect'),
+                ),
+              ),
+              Divider(
+                height: 1,
+                color: AppTheme.pureBlack.withValues(alpha: 0.1),
+              ),
+              ListTile(
+                leading: const Icon(Icons.sync, color: AppTheme.logoBlue),
+                title: const Text(
+                  'Busy window cache',
+                  style: TextStyle(
+                    color: AppTheme.pureBlack,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_calendarSyncStatusText()),
+                ),
+                trailing: connected
+                    ? TextButton(
+                        onPressed: _isCalendarSyncBusy
+                            ? null
+                            : _refreshCalendarBusyWindows,
+                        child: _isCalendarSyncBusy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Refresh'),
+                      )
+                    : null,
+              ),
+              Divider(
+                height: 1,
+                color: AppTheme.pureBlack.withValues(alpha: 0.1),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(AppTheme.cardPadding),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lock_outline, color: AppTheme.logoBlue),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Quietly uses calendar access to detect meeting times. Event details are not stored.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.pureBlack.withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildKeywordBypassSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        _sectionHeader(
           'Emergency Keyword Bypass',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppTheme.pureBlack,
-          ),
+          'Let selected urgent messages break through automation DND.',
         ),
         const SizedBox(height: 8),
         Card(
@@ -402,7 +619,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               SwitchListTile(
                 title: const Text('Emergency keyword bypass'),
                 subtitle: const Text(
-                  'Detect selected keywords from selected app notifications while automation DND is active.',
+                  'Detect selected keywords from monitored app notifications while automation DND is active.',
                 ),
                 value: _keywordBypassEnabled,
                 onChanged: _isSaving ? null : _setKeywordBypassEnabled,
@@ -412,9 +629,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                 color: AppTheme.pureBlack.withValues(alpha: 0.1),
               ),
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(AppTheme.cardPadding),
                 child: Text(
-                  'Notification text is checked locally on this device. Message content is not stored or uploaded.',
+                  'Notification text is checked locally. Message content is not stored or uploaded.',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.pureBlack.withValues(alpha: 0.65),
@@ -435,13 +652,20 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget _buildKeywordEditor() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppTheme.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               'Keywords',
               style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Words that can trigger an emergency bypass alert.',
+              style: TextStyle(
+                color: AppTheme.pureBlack.withValues(alpha: 0.62),
+              ),
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -485,19 +709,19 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget _buildMonitoredAppSelector() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppTheme.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Monitored Apps',
+              'Monitored apps',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
               _selectedPackages.isEmpty
                   ? 'No apps selected'
-                  : '${_selectedPackages.length} app(s) selected',
+                  : '${_selectedPackages.length} apps selected',
               style: TextStyle(
                 color: AppTheme.pureBlack.withValues(alpha: 0.6),
               ),
@@ -553,6 +777,64 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppTheme.pureBlack,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
+        ),
+      ],
+    );
+  }
+
+  Widget _statusPill(bool granted) {
+    final color = granted ? AppTheme.logoCyan : AppTheme.logoPurple;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        granted ? 'Granted' : 'Missing',
+        style: TextStyle(
+          color: granted ? AppTheme.pureBlack : AppTheme.logoPurple,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _connectionPill(bool connected) {
+    final color = connected ? AppTheme.logoCyan : AppTheme.logoPurple;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        connected ? 'Connected' : 'Not connected',
+        style: TextStyle(
+          color: connected ? AppTheme.pureBlack : AppTheme.logoPurple,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

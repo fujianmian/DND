@@ -10,6 +10,17 @@ class AppTheme {
   static const Color pureWhite = Color(0xFFFFFFFF);
   static const Color pureBlack = Color(0xFF000000);
 
+  static const double pagePadding = 16;
+  static const double sectionGap = 24;
+  static const double cardPadding = 16;
+  static const double cardRadius = 16;
+  static const double largeCardRadius = 20;
+  static const double cardVerticalMargin = 8;
+
+  static BorderRadius get cardBorderRadius => BorderRadius.circular(cardRadius);
+  static BorderRadius get largeCardBorderRadius =>
+      BorderRadius.circular(largeCardRadius);
+
   static ThemeData get lightTheme {
     return ThemeData(
       brightness: Brightness.light,
@@ -20,7 +31,6 @@ class AppTheme {
         secondary: logoCyan,
         tertiary: logoPurple,
         surface: pureWhite,
-        background: pureWhite,
         onPrimary: pureWhite,
         onSurface: pureBlack,
       ),
@@ -38,11 +48,12 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: pureWhite,
         elevation: 0,
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        clipBehavior: Clip.antiAlias,
+        margin: const EdgeInsets.symmetric(vertical: cardVerticalMargin),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(cardRadius),
           // Subtle pure black opacity border for depth without adding gray
-          side: BorderSide(color: pureBlack.withOpacity(0.1), width: 1),
+          side: BorderSide(color: pureBlack.withValues(alpha: 0.1), width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -62,32 +73,35 @@ class AppTheme {
         elevation: 4,
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: MaterialStateProperty.resolveWith((states) {
+        thumbColor: WidgetStateProperty.resolveWith((states) {
           return pureWhite;
         }),
-        trackColor: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) return logoCyan;
-          return pureBlack.withOpacity(0.2); // Faded black for off state
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return logoCyan;
+          return pureBlack.withValues(alpha: 0.2);
         }),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: pureWhite,
-        indicatorColor: logoPurple.withOpacity(0.2), // Soft purple highlight
-        labelTextStyle: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        indicatorColor: logoPurple.withValues(alpha: 0.2),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const TextStyle(
               color: logoBlue,
               fontWeight: FontWeight.bold,
               fontSize: 12,
             );
           }
-          return TextStyle(color: pureBlack.withOpacity(0.5), fontSize: 12);
+          return TextStyle(
+            color: pureBlack.withValues(alpha: 0.5),
+            fontSize: 12,
+          );
         }),
-        iconTheme: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const IconThemeData(color: logoBlue);
           }
-          return IconThemeData(color: pureBlack.withOpacity(0.5));
+          return IconThemeData(color: pureBlack.withValues(alpha: 0.5));
         }),
       ),
     );

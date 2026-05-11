@@ -1,4 +1,4 @@
-enum TriggerType { time, location, app, activity }
+enum TriggerType { time, location, app, activity, calendar }
 
 class Rule {
   String id;

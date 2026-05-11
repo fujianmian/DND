@@ -1,9 +1,42 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../database/database.dart';
 import '../main.dart';
 import 'app_catalog.dart';
 import 'dnd_service.dart';
+
+class AutomationSyncPayload {
+  const AutomationSyncPayload({
+    required this.enabledRuleCount,
+    required this.enabledTriggerCount,
+    required this.legacyFallbackCount,
+    required this.flattenedMultiTriggerRuleCount,
+    required this.groupedRuleCount,
+    required this.groupedTriggerCount,
+    required this.skippedInvalidGroupedTriggerCount,
+    required this.automationRulesJson,
+    required this.calendarBusyWindowsJson,
+    required this.timeRules,
+    required this.locationRules,
+    required this.appRules,
+    required this.activityRules,
+  });
+
+  final int enabledRuleCount;
+  final int enabledTriggerCount;
+  final int legacyFallbackCount;
+  final int flattenedMultiTriggerRuleCount;
+  final int groupedRuleCount;
+  final int groupedTriggerCount;
+  final int skippedInvalidGroupedTriggerCount;
+  final String automationRulesJson;
+  final String calendarBusyWindowsJson;
+  final List<Map<String, dynamic>> timeRules;
+  final List<Map<String, dynamic>> locationRules;
+  final List<Map<String, dynamic>> appRules;
+  final List<Map<String, dynamic>> activityRules;
+}
 
 class AutomationManager with WidgetsBindingObserver {
   Timer? _timer;
@@ -60,70 +93,49 @@ class AutomationManager with WidgetsBindingObserver {
   // Call this whenever a rule is created, updated, or deleted
   Future<void> syncRulesToAndroid() async {
     try {
-      final activeRules = await (database.select(
-        database.rules,
-      )..where((t) => t.isEnabled.equals(true))).get();
+      final activeRules = await database.getEnabledRulesWithTriggers();
+      final calendarBusyWindowsJson = await buildCalendarBusyWindowsJson();
+      final payload = buildSyncPayloadFromRuleTriggers(
+        activeRules,
+        calendarBusyWindowsJson: calendarBusyWindowsJson,
+      );
 
-      List<Map<String, dynamic>> timeRulesMap = [];
-      List<Map<String, dynamic>> locRulesMap = [];
-      List<Map<String, dynamic>> appRulesMap = [];
-      List<Map<String, dynamic>> activityRulesMap = [];
-
-      for (var rule in activeRules) {
-        if (rule.type == 0 && rule.startTime != null && rule.endTime != null) {
-          final start = _parseTimeString(rule.startTime!);
-          final end = _parseTimeString(rule.endTime!);
-          if (start != null && end != null) {
-            timeRulesMap.add({
-              'id': rule.id.toString(),
-              'name': rule.name,
-              'startHour': start.hour,
-              'startMinute': start.minute,
-              'endHour': end.hour,
-              'endMinute': end.minute,
-              'allowStarredContacts': rule.allowStarredContacts,
-              'allowRepeatCallers': rule.allowRepeatCallers,
-            });
-          }
-        } else if (rule.type == 1 &&
-            rule.latitude != null &&
-            rule.longitude != null &&
-            rule.radius != null) {
-          locRulesMap.add({
-            'id': rule.id.toString(),
-            'name': rule.name,
-            'lat': rule.latitude!,
-            'lng': rule.longitude!,
-            'rad': rule.radius!,
-            'allowStarredContacts': rule.allowStarredContacts,
-            'allowRepeatCallers': rule.allowRepeatCallers,
-          });
-        } else if (rule.type == 2 && rule.packageName != null) {
-          // 🔹 FIX 2: Collect the App Packages
-          appRulesMap.add({
-            'id': rule.id.toString(),
-            'name': rule.name,
-            'packageName': rule.packageName!,
-            'allowStarredContacts': rule.allowStarredContacts,
-            'allowRepeatCallers': rule.allowRepeatCallers,
-          });
-        } else if (rule.type == 3 && rule.activityType != null) {
-          activityRulesMap.add({
-            'id': rule.id.toString(),
-            'name': rule.name,
-            'activityType': rule.activityType!,
-            'allowStarredContacts': rule.allowStarredContacts,
-            'allowRepeatCallers': rule.allowRepeatCallers,
-          });
-        }
+      debugPrint(
+        "Automation sync source: enabledRules=${payload.enabledRuleCount}, "
+        "enabledTriggers=${payload.enabledTriggerCount}, "
+        "legacyFallbackRules=${payload.legacyFallbackCount}",
+      );
+      debugPrint(
+        "Automation sync payload: time=${payload.timeRules.length}, "
+        "location=${payload.locationRules.length}, "
+        "app=${payload.appRules.length}, "
+        "activity=${payload.activityRules.length}",
+      );
+      debugPrint(
+        "Automation grouped payload: rules=${payload.groupedRuleCount}, "
+        "triggers=${payload.groupedTriggerCount}, "
+        "skippedInvalidTriggers=${payload.skippedInvalidGroupedTriggerCount}, "
+        "jsonLength=${payload.automationRulesJson.length}",
+      );
+      debugPrint(
+        "Automation calendar payload: jsonLength=${payload.calendarBusyWindowsJson.length}",
+      );
+      if (payload.flattenedMultiTriggerRuleCount > 0) {
+        debugPrint(
+          "Automation sync compatibility payload: "
+          "${payload.flattenedMultiTriggerRuleCount} multi-trigger rule(s) "
+          "also sent as flat native entries for fallback support.",
+        );
       }
 
       // Send the separated rules to the Kotlin Execution Engine
       await DndService.syncRulesToService(
-        timeRulesMap,
-        locRulesMap,
-        appRulesMap,
-        activityRulesMap,
+        payload.timeRules,
+        payload.locationRules,
+        payload.appRules,
+        payload.activityRules,
+        payload.automationRulesJson,
+        payload.calendarBusyWindowsJson,
       );
 
       // Update UI immediately after syncing
@@ -131,6 +143,338 @@ class AutomationManager with WidgetsBindingObserver {
     } catch (e) {
       debugPrint("Automation Sync Error: ${e.toString()}");
     }
+  }
+
+  AutomationSyncPayload buildSyncPayloadFromRuleTriggers(
+    List<RuleWithTriggers> rulesWithTriggers, {
+    String calendarBusyWindowsJson = '[]',
+  }) {
+    final timeRulesMap = <Map<String, dynamic>>[];
+    final locRulesMap = <Map<String, dynamic>>[];
+    final appRulesMap = <Map<String, dynamic>>[];
+    final activityRulesMap = <Map<String, dynamic>>[];
+
+    var enabledTriggerCount = 0;
+    var legacyFallbackCount = 0;
+    var flattenedMultiTriggerRuleCount = 0;
+    final groupedRules = <Map<String, dynamic>>[];
+    var groupedTriggerCount = 0;
+    var skippedInvalidGroupedTriggerCount = 0;
+
+    for (final entry in rulesWithTriggers) {
+      final rule = entry.rule;
+      final enabledTriggers = entry.triggers
+          .where((trigger) => trigger.enabled)
+          .toList(growable: false);
+      enabledTriggerCount += enabledTriggers.length;
+
+      if (enabledTriggers.length > 1) {
+        // Keep flat native entries available for fallback compatibility.
+        flattenedMultiTriggerRuleCount += 1;
+      }
+
+      final groupedTriggers = <Map<String, dynamic>>[];
+      for (final trigger in enabledTriggers) {
+        final groupedTrigger = _groupedTriggerPayload(rule, trigger);
+        if (groupedTrigger == null) {
+          skippedInvalidGroupedTriggerCount += 1;
+          continue;
+        }
+        groupedTriggers.add(groupedTrigger);
+      }
+
+      if (entry.triggers.isNotEmpty && groupedTriggers.isEmpty) {
+        debugPrint(
+          "Automation grouped payload skipped rule ${rule.id} (${rule.name}): no valid enabled triggers.",
+        );
+      } else if (groupedTriggers.isNotEmpty) {
+        groupedTriggerCount += groupedTriggers.length;
+        groupedRules.add({
+          'id': rule.id.toString(),
+          'name': rule.name,
+          'enabled': rule.isEnabled,
+          'matchType': rule.matchType,
+          'priority': rule.priority,
+          'allowStarredContacts': rule.allowStarredContacts,
+          'allowRepeatCallers': rule.allowRepeatCallers,
+          'triggers': groupedTriggers,
+        });
+      }
+
+      if (entry.triggers.isEmpty) {
+        legacyFallbackCount += 1;
+        debugPrint(
+          "Automation sync fallback: rule ${rule.id} (${rule.name}) has no RuleTriggers; using legacy Rules fields.",
+        );
+        _addLegacyRuleToPayload(
+          rule,
+          timeRulesMap,
+          locRulesMap,
+          appRulesMap,
+          activityRulesMap,
+        );
+        continue;
+      }
+
+      for (final trigger in enabledTriggers) {
+        _addTriggerToPayload(
+          rule,
+          trigger,
+          timeRulesMap,
+          locRulesMap,
+          appRulesMap,
+          activityRulesMap,
+        );
+      }
+    }
+
+    return AutomationSyncPayload(
+      enabledRuleCount: rulesWithTriggers.length,
+      enabledTriggerCount: enabledTriggerCount,
+      legacyFallbackCount: legacyFallbackCount,
+      flattenedMultiTriggerRuleCount: flattenedMultiTriggerRuleCount,
+      groupedRuleCount: groupedRules.length,
+      groupedTriggerCount: groupedTriggerCount,
+      skippedInvalidGroupedTriggerCount: skippedInvalidGroupedTriggerCount,
+      automationRulesJson: jsonEncode(groupedRules),
+      calendarBusyWindowsJson: calendarBusyWindowsJson,
+      timeRules: timeRulesMap,
+      locationRules: locRulesMap,
+      appRules: appRulesMap,
+      activityRules: activityRulesMap,
+    );
+  }
+
+  Future<String> buildCalendarBusyWindowsJson([
+    AppDatabase? sourceDatabase,
+  ]) async {
+    final db = sourceDatabase ?? database;
+    final windows = await db.select(db.calendarBusyWindowsCache).get();
+    return jsonEncode(
+      windows
+          .map(
+            (window) => {
+              'triggerId': window.triggerId,
+              'startMillis': window.startMillis,
+              'endMillis': window.endMillis,
+              'isAllDay': window.isAllDay,
+              'keywordMatched': window.keywordMatched,
+              'fetchedAt': window.fetchedAt,
+            },
+          )
+          .toList(growable: false),
+    );
+  }
+
+  void _addTriggerToPayload(
+    Rule rule,
+    RuleTrigger trigger,
+    List<Map<String, dynamic>> timeRulesMap,
+    List<Map<String, dynamic>> locRulesMap,
+    List<Map<String, dynamic>> appRulesMap,
+    List<Map<String, dynamic>> activityRulesMap,
+  ) {
+    switch (trigger.triggerType) {
+      case 0:
+        _addTimePayload(rule, trigger.startTime, trigger.endTime, timeRulesMap);
+        break;
+      case 1:
+        _addLocationPayload(
+          rule,
+          trigger.latitude,
+          trigger.longitude,
+          trigger.radius,
+          locRulesMap,
+        );
+        break;
+      case 2:
+        _addAppPayload(rule, trigger.packageName, appRulesMap);
+        break;
+      case 3:
+        _addActivityPayload(rule, trigger.activityType, activityRulesMap);
+        break;
+    }
+  }
+
+  Map<String, dynamic>? _groupedTriggerPayload(Rule rule, RuleTrigger trigger) {
+    final base = <String, dynamic>{
+      'id': trigger.id.toString(),
+      'triggerType': trigger.triggerType,
+      'enabled': trigger.enabled,
+    };
+
+    switch (trigger.triggerType) {
+      case 0:
+        final startTime = trigger.startTime;
+        final endTime = trigger.endTime;
+        if (startTime == null || endTime == null) {
+          debugPrint(
+            "Automation grouped payload skipped invalid time trigger ${trigger.id} for rule ${rule.id}: missing start/end time.",
+          );
+          return null;
+        }
+        final start = _parseTimeString(startTime);
+        final end = _parseTimeString(endTime);
+        if (start == null || end == null) {
+          debugPrint(
+            "Automation grouped payload skipped invalid time trigger ${trigger.id} for rule ${rule.id}: failed to parse start/end time.",
+          );
+          return null;
+        }
+        return {
+          ...base,
+          'startHour': start.hour,
+          'startMinute': start.minute,
+          'endHour': end.hour,
+          'endMinute': end.minute,
+        };
+      case 1:
+        final latitude = trigger.latitude;
+        final longitude = trigger.longitude;
+        final radius = trigger.radius;
+        if (latitude == null || longitude == null || radius == null) {
+          debugPrint(
+            "Automation grouped payload skipped invalid location trigger ${trigger.id} for rule ${rule.id}: missing latitude/longitude/radius.",
+          );
+          return null;
+        }
+        return {
+          ...base,
+          'latitude': latitude,
+          'longitude': longitude,
+          'radius': radius.round(),
+        };
+      case 2:
+        final packageName = trigger.packageName;
+        if (packageName == null || packageName.isEmpty) {
+          debugPrint(
+            "Automation grouped payload skipped invalid app trigger ${trigger.id} for rule ${rule.id}: missing packageName.",
+          );
+          return null;
+        }
+        return {...base, 'packageName': packageName};
+      case 3:
+        final activityType = trigger.activityType;
+        if (activityType == null || activityType.isEmpty) {
+          debugPrint(
+            "Automation grouped payload skipped invalid activity trigger ${trigger.id} for rule ${rule.id}: missing activityType.",
+          );
+          return null;
+        }
+        return {...base, 'activityType': activityType};
+      case 4:
+        return base;
+      default:
+        debugPrint(
+          "Automation grouped payload skipped unknown trigger ${trigger.id} for rule ${rule.id}: triggerType=${trigger.triggerType}.",
+        );
+        return null;
+    }
+  }
+
+  void _addLegacyRuleToPayload(
+    Rule rule,
+    List<Map<String, dynamic>> timeRulesMap,
+    List<Map<String, dynamic>> locRulesMap,
+    List<Map<String, dynamic>> appRulesMap,
+    List<Map<String, dynamic>> activityRulesMap,
+  ) {
+    switch (rule.type) {
+      case 0:
+        _addTimePayload(rule, rule.startTime, rule.endTime, timeRulesMap);
+        break;
+      case 1:
+        _addLocationPayload(
+          rule,
+          rule.latitude,
+          rule.longitude,
+          rule.radius?.toDouble(),
+          locRulesMap,
+        );
+        break;
+      case 2:
+        _addAppPayload(rule, rule.packageName, appRulesMap);
+        break;
+      case 3:
+        _addActivityPayload(rule, rule.activityType, activityRulesMap);
+        break;
+    }
+  }
+
+  void _addTimePayload(
+    Rule rule,
+    String? startTime,
+    String? endTime,
+    List<Map<String, dynamic>> timeRulesMap,
+  ) {
+    if (startTime == null || endTime == null) return;
+
+    final start = _parseTimeString(startTime);
+    final end = _parseTimeString(endTime);
+    if (start == null || end == null) return;
+
+    timeRulesMap.add({
+      'id': rule.id.toString(),
+      'name': rule.name,
+      'startHour': start.hour,
+      'startMinute': start.minute,
+      'endHour': end.hour,
+      'endMinute': end.minute,
+      'allowStarredContacts': rule.allowStarredContacts,
+      'allowRepeatCallers': rule.allowRepeatCallers,
+    });
+  }
+
+  void _addLocationPayload(
+    Rule rule,
+    double? latitude,
+    double? longitude,
+    double? radius,
+    List<Map<String, dynamic>> locRulesMap,
+  ) {
+    if (latitude == null || longitude == null || radius == null) return;
+
+    locRulesMap.add({
+      'id': rule.id.toString(),
+      'name': rule.name,
+      'lat': latitude,
+      'lng': longitude,
+      'rad': radius.round(),
+      'allowStarredContacts': rule.allowStarredContacts,
+      'allowRepeatCallers': rule.allowRepeatCallers,
+    });
+  }
+
+  void _addAppPayload(
+    Rule rule,
+    String? packageName,
+    List<Map<String, dynamic>> appRulesMap,
+  ) {
+    if (packageName == null || packageName.isEmpty) return;
+
+    appRulesMap.add({
+      'id': rule.id.toString(),
+      'name': rule.name,
+      'packageName': packageName,
+      'allowStarredContacts': rule.allowStarredContacts,
+      'allowRepeatCallers': rule.allowRepeatCallers,
+    });
+  }
+
+  void _addActivityPayload(
+    Rule rule,
+    String? activityType,
+    List<Map<String, dynamic>> activityRulesMap,
+  ) {
+    if (activityType == null || activityType.isEmpty) return;
+
+    activityRulesMap.add({
+      'id': rule.id.toString(),
+      'name': rule.name,
+      'activityType': activityType,
+      'allowStarredContacts': rule.allowStarredContacts,
+      'allowRepeatCallers': rule.allowRepeatCallers,
+    });
   }
 
   // --- Keeps your Status Screen UI updated ---

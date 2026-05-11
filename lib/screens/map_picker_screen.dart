@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_theme.dart';
 
 class MapPickerScreen extends StatefulWidget {
   final double? initialLatitude;
@@ -185,7 +186,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
           circleId: const CircleId('radius'),
           center: _selectedLocation!,
           radius: _radius,
-          fillColor: Colors.blue.withOpacity(0.2),
+          fillColor: Colors.blue.withValues(alpha: 0.2),
           strokeColor: Colors.blue,
           strokeWidth: 2,
         ),
@@ -242,15 +243,16 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                 // Search Input Field
                 Card(
                   elevation: 4,
+                  clipBehavior: Clip.antiAlias,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: AppTheme.largeCardBorderRadius,
                   ),
                   child: TextField(
                     controller: _searchController,
                     focusNode: _searchFocusNode,
                     onChanged: _onSearchChanged,
                     decoration: InputDecoration(
-                      hintText: 'Search house plate or place...',
+                      hintText: 'Search a place or address',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -288,8 +290,9 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Card(
                       elevation: 4,
+                      clipBehavior: Clip.antiAlias,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: AppTheme.cardBorderRadius,
                       ),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(
@@ -322,62 +325,74 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               left: 0,
               right: 0,
               child: SafeArea(
+                top: false,
                 child: Card(
-                  margin: const EdgeInsets.all(16.0),
+                  clipBehavior: Clip.antiAlias,
+                  margin: const EdgeInsets.all(AppTheme.pagePadding),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 8.0,
+                      horizontal: AppTheme.cardPadding,
+                      vertical: 12.0,
                     ),
-                    child: Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Wrap Text in a SizedBox with fixed width so the slider doesn't shift
-                        SizedBox(
-                          width:
-                              130, // Slightly wider to fit the separated Row safely
-                          child: Row(
-                            children: [
-                              const Text(
-                                'Radius: ',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              // Dedicated fixed-width box for the number
-                              SizedBox(
-                                width: 40,
-                                child: Text(
-                                  '${_radius.toInt()}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign
-                                      .right, // Anchors the text to the right, next to the 'm'
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.radio_button_unchecked,
+                              color: AppTheme.logoBlue,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Geofence radius',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const Text(
-                                'm',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              '${_radius.toInt()}m',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        Expanded(
-                          child: Slider(
-                            value: _radius,
-                            min: 50,
-                            max: 1000,
-                            divisions: 19,
-                            onChanged: (value) {
-                              // Only play sound/haptic when the slider value actually snaps to a new division
-                              if (value != _radius) {
-                                // 1. Play a subtle selection click vibration
-                                HapticFeedback.selectionClick();
-                                // 2. Play the system UI "tik" click sound
-                                SystemSound.play(SystemSoundType.click);
-
-                                setState(() => _radius = value);
-                              }
-                            },
+                        if (_radius < 100) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '100m or more is recommended for reliable location activation.',
+                            style: TextStyle(
+                              color: AppTheme.pureBlack.withValues(alpha: 0.62),
+                              fontSize: 12,
+                            ),
                           ),
+                        ],
+                        Row(
+                          children: [
+                            const Text('50m'),
+                            Expanded(
+                              child: Slider(
+                                value: _radius,
+                                min: 50,
+                                max: 1000,
+                                divisions: 19,
+                                onChanged: (value) {
+                                  if (value != _radius) {
+                                    HapticFeedback.selectionClick();
+                                    SystemSound.play(SystemSoundType.click);
+
+                                    setState(() => _radius = value);
+                                  }
+                                },
+                              ),
+                            ),
+                            const Text('1000m'),
+                          ],
                         ),
                       ],
                     ),

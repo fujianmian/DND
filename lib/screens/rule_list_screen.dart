@@ -3,9 +3,11 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../database/database.dart';
 import '../main.dart';
+import '../models/rule_trigger_summary.dart';
 import '../services/app_catalog.dart';
 import '../theme/app_theme.dart';
 import 'create_rule_wizard.dart';
+import 'multi_trigger_rule_form_screen.dart';
 import 'rule_form_screen.dart';
 
 class RuleListScreen extends StatefulWidget {
@@ -31,57 +33,91 @@ class _RuleListScreenState extends State<RuleListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
       appBar: AppBar(title: const Text('My Rules')),
-      body: StreamBuilder<List<Rule>>(
-        stream: database.watchAllRules(),
+      body: StreamBuilder<List<RuleWithTriggers>>(
+        stream: database.watchRulesWithTriggers(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final rules = snapshot.data ?? [];
-          if (rules.isEmpty) return _buildEmptyState();
-          _primeAppLabels(rules);
+          final entries = snapshot.data ?? [];
+          if (entries.isEmpty) return _buildEmptyState();
+          _primeAppLabels(entries);
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: rules.length,
+            padding: EdgeInsets.fromLTRB(
+              AppTheme.pagePadding,
+              AppTheme.pagePadding,
+              AppTheme.pagePadding,
+              96 + bottomSafePadding,
+            ),
+            itemCount: entries.length,
             itemBuilder: (context, index) {
-              final rule = rules[index];
+              final entry = entries[index];
+              final rule = entry.rule;
               return Card(
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _openEditForm(rule),
+                  borderRadius: AppTheme.cardBorderRadius,
+                  onTap: () => _openEditForm(entry),
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(AppTheme.cardPadding),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(
-                                rule.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.pureBlack,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    rule.name,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.pureBlack,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      _stateDot(rule.isEnabled),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        rule.isEnabled ? 'Enabled' : 'Paused',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: rule.isEnabled
+                                              ? AppTheme.logoBlue
+                                              : AppTheme.pureBlack.withValues(
+                                                  alpha: 0.55,
+                                                ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
                             Switch(
                               value: rule.isEnabled,
-                              onChanged: (val) => _toggleRule(rule, val),
+                              onChanged: (val) => _toggleRule(entry, val),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
+                        _buildSummaryRow(entry),
+                        const SizedBox(height: 12),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: _ruleChips(rule),
+                          children: _detailChips(entry),
                         ),
                       ],
                     ),
@@ -94,7 +130,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
-        label: const Text('New Rule'),
+        label: const Text('New rule'),
         onPressed: _openCreateWizard,
       ),
     );
@@ -107,21 +143,37 @@ class _RuleListScreenState extends State<RuleListScreen> {
     );
   }
 
-  Future<void> _openEditForm(Rule rule) async {
+  Future<void> _openEditForm(RuleWithTriggers entry) async {
+    if (entry.triggers.length > 1) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MultiTriggerRuleFormScreen(ruleWithTriggers: entry),
+        ),
+      );
+      return;
+    }
+
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => RuleFormScreen(rule: rule)),
+      MaterialPageRoute(builder: (_) => RuleFormScreen(rule: entry.rule)),
     );
   }
 
-  Future<void> _toggleRule(Rule rule, bool isEnabled) async {
-    if (isEnabled && rule.type == 1) {
+  Future<void> _toggleRule(RuleWithTriggers entry, bool isEnabled) async {
+    final rule = entry.rule;
+    if (isEnabled && _hasLocationTrigger(entry)) {
       final canEnableLocationRule = await _ensureLocationRulePermissions();
       if (!canEnableLocationRule) return;
     }
 
     await database.updateRule(rule.copyWith(isEnabled: isEnabled));
     await automationManager.syncRulesToAndroid();
+  }
+
+  bool _hasLocationTrigger(RuleWithTriggers entry) {
+    if (entry.triggers.isEmpty) return entry.rule.type == 1;
+    return entry.triggers.any((trigger) => trigger.triggerType == 1);
   }
 
   Future<bool> _ensureLocationRulePermissions() async {
@@ -178,27 +230,65 @@ class _RuleListScreenState extends State<RuleListScreen> {
     );
   }
 
-  String _triggerLabel(Rule rule) {
-    switch (rule.type) {
-      case 0:
-        final start = rule.startTime ?? '--';
-        final end = rule.endTime ?? '--';
-        return 'Time: $start - $end';
-      case 1:
-        final radius = rule.radius == null ? '' : ' (${rule.radius}m)';
-        return 'Location$radius';
-      case 2:
-        return 'App: ${appCatalog.labelFor(rule.packageName)}';
-      case 3:
-        return 'Activity: ${rule.activityType ?? 'Not selected'}';
-      default:
-        return 'Unknown trigger';
-    }
+  String _triggerLabel(RuleWithTriggers entry) {
+    return RuleTriggerSummaryFormatter.ruleSummary(
+      entry,
+      appLabelFor: appCatalog.labelFor,
+    );
   }
 
-  List<Widget> _ruleChips(Rule rule) {
+  Widget _stateDot(bool isEnabled) {
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: isEnabled
+            ? AppTheme.logoCyan
+            : AppTheme.pureBlack.withValues(alpha: 0.28),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(RuleWithTriggers entry) {
+    final leading = _triggerLeading(entry);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        leading ?? _summaryIcon(entry),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            _triggerLabel(entry),
+            style: const TextStyle(
+              color: AppTheme.pureBlack,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryIcon(RuleWithTriggers entry) {
+    final triggerType = entry.triggers.isEmpty
+        ? entry.rule.type
+        : entry.triggers.first.triggerType;
+    final icon = switch (triggerType) {
+      0 => Icons.schedule,
+      1 => Icons.location_on_outlined,
+      2 => Icons.apps,
+      3 => Icons.directions_walk,
+      4 => Icons.event,
+      _ => Icons.rule,
+    };
+    return Icon(icon, size: 18, color: AppTheme.logoBlue);
+  }
+
+  List<Widget> _detailChips(RuleWithTriggers entry) {
+    final rule = entry.rule;
     final chips = <Widget>[
-      _buildChip(_triggerLabel(rule), leading: _triggerLeading(rule)),
+      _buildChip('Priority: ${priorityLabel(rule.priority)}'),
     ];
 
     if (rule.allowStarredContacts) {
@@ -211,34 +301,60 @@ class _RuleListScreenState extends State<RuleListScreen> {
     return chips;
   }
 
-  Widget? _triggerLeading(Rule rule) {
-    if (rule.type != 2 || rule.packageName == null) return null;
+  Widget? _triggerLeading(RuleWithTriggers entry) {
+    final packageName = _singleAppPackage(entry);
+    if (packageName == null) return null;
 
-    final entry = appCatalog.cachedEntry(rule.packageName!);
-    if (entry?.iconBytes == null) {
+    final appEntry = appCatalog.cachedEntry(packageName);
+    if (appEntry?.iconBytes == null) {
       return const Icon(Icons.apps, size: 16, color: AppTheme.logoBlue);
     }
 
-    return Image.memory(entry!.iconBytes!, width: 16, height: 16);
+    return Image.memory(appEntry!.iconBytes!, width: 16, height: 16);
   }
 
-  void _primeAppLabels(List<Rule> rules) {
-    for (final rule in rules) {
-      final packageName = rule.packageName;
-      if (rule.type != 2 ||
-          packageName == null ||
-          packageName.isEmpty ||
-          appCatalog.cachedEntry(packageName) != null ||
-          _loadingAppPackages.contains(packageName)) {
-        continue;
-      }
+  void _primeAppLabels(List<RuleWithTriggers> entries) {
+    for (final entry in entries) {
+      for (final packageName in _appPackagesFor(entry)) {
+        if (packageName == null ||
+            packageName.isEmpty ||
+            appCatalog.cachedEntry(packageName) != null ||
+            _loadingAppPackages.contains(packageName)) {
+          continue;
+        }
 
-      _loadingAppPackages.add(packageName);
-      appCatalog.loadAppInfo(packageName).whenComplete(() {
-        _loadingAppPackages.remove(packageName);
-        if (mounted) setState(() {});
-      });
+        _loadingAppPackages.add(packageName);
+        appCatalog.loadAppInfo(packageName).whenComplete(() {
+          _loadingAppPackages.remove(packageName);
+          if (mounted) setState(() {});
+        });
+      }
     }
+  }
+
+  String? _singleAppPackage(RuleWithTriggers entry) {
+    if (entry.triggers.length == 1) {
+      final trigger = entry.triggers.single;
+      if (trigger.triggerType == 2) return trigger.packageName;
+      return null;
+    }
+
+    if (entry.triggers.isEmpty && entry.rule.type == 2) {
+      return entry.rule.packageName;
+    }
+
+    return null;
+  }
+
+  Iterable<String?> _appPackagesFor(RuleWithTriggers entry) {
+    if (entry.triggers.isNotEmpty) {
+      return entry.triggers
+          .where((trigger) => trigger.triggerType == 2)
+          .map((trigger) => trigger.packageName);
+    }
+
+    if (entry.rule.type == 2) return [entry.rule.packageName];
+    return const [];
   }
 
   Widget _buildChip(String label, {Widget? leading}) {

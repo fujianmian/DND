@@ -79,5 +79,16 @@ RuleTriggerValues cleanedRuleTriggerValues({
         packageName: const d.Value<String?>(null),
         activityType: d.Value(activityType),
       );
+    case model.TriggerType.calendar:
+      return const RuleTriggerValues(
+        type: 4,
+        startTime: d.Value<String?>(null),
+        endTime: d.Value<String?>(null),
+        latitude: d.Value<double?>(null),
+        longitude: d.Value<double?>(null),
+        radius: d.Value<int?>(null),
+        packageName: d.Value<String?>(null),
+        activityType: d.Value<String?>(null),
+      );
   }
 }

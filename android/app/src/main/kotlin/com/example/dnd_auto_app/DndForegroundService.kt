@@ -2,6 +2,7 @@ package com.example.dnd_auto_app
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageEvents
@@ -29,6 +30,17 @@ import java.util.TimerTask
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionClient
 import com.google.android.gms.location.DetectedActivity
+import org.json.JSONArray
+import org.json.JSONObject
+
+const val MATCH_TYPE_ANY = 0
+const val MATCH_TYPE_ALL = 1
+const val TRIGGER_TYPE_TIME = 0
+const val TRIGGER_TYPE_LOCATION = 1
+const val TRIGGER_TYPE_APP = 2
+const val TRIGGER_TYPE_ACTIVITY = 3
+const val TRIGGER_TYPE_CALENDAR = 4
+const val DEFAULT_RULE_PRIORITY = 50
 
 data class DndRule(
     val id: String,
@@ -67,10 +79,48 @@ data class DndActivityRule(
     val allowRepeatCallers: Boolean
 )
 
+data class AutomationRule(
+    val id: String,
+    val name: String,
+    val enabled: Boolean,
+    val matchType: Int,
+    val priority: Int,
+    val allowStarredContacts: Boolean,
+    val allowRepeatCallers: Boolean,
+    val triggers: List<AutomationTrigger>
+)
+
+data class AutomationTrigger(
+    val id: String,
+    val triggerType: Int,
+    val enabled: Boolean,
+    val startHour: Int?,
+    val startMinute: Int?,
+    val endHour: Int?,
+    val endMinute: Int?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val radius: Int?,
+    val packageName: String?,
+    val activityType: String?
+)
+
+data class CalendarBusyWindow(
+    val triggerId: String,
+    val startMillis: Long,
+    val endMillis: Long,
+    val isAllDay: Boolean,
+    val keywordMatched: Boolean,
+    val fetchedAt: Long
+)
+
 class DndForegroundService : Service() {
 
     private val CHANNEL_ID = "DndServiceChannel"
     private val DND_DISABLE_GRACE_MS = 3000L
+    private val activeNotificationTitle = "DND Automation Active"
+    private val inactiveNotificationTitle = "Quietly is monitoring"
+    private val inactiveNotificationText = "No automation rule is active"
     private var timer: Timer? = null
     private val disableGraceHandler = Handler(Looper.getMainLooper())
     private var pendingDisableRunnable: Runnable? = null
@@ -78,6 +128,9 @@ class DndForegroundService : Service() {
     private var activeLocationRules: List<DndLocationRule> = emptyList()
     private var targetAppRules: List<DndAppRule> = emptyList()
     private var targetActivityRules: List<DndActivityRule> = emptyList()
+    private var groupedAutomationRules: List<AutomationRule> = emptyList()
+    private var calendarBusyWindows: List<CalendarBusyWindow> = emptyList()
+    private var notificationMonitoringText: String = inactiveNotificationText
     private var targetAppPackages: Array<String> = emptyArray() // Track App Triggers
     private var targetActivityTypes: Array<String> = emptyArray() // Track Activity Triggers
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
@@ -122,6 +175,15 @@ class DndForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val ruleIntent = resolveRulePayloadIntent(intent)
         val hasResolvedRulePayload = ruleIntent != null
+        val automationRulesJson = ruleIntent?.getStringExtra("automationRulesJson")
+        groupedAutomationRules = parseGroupedAutomationRules(automationRulesJson)
+        val calendarBusyWindowsJson = ruleIntent?.getStringExtra("calendarBusyWindowsJson")
+        calendarBusyWindows = parseCalendarBusyWindows(calendarBusyWindowsJson)
+        val groupedTriggerCount = groupedAutomationRules.sumOf { it.triggers.size }
+        android.util.Log.d(
+            "DndGroupedRules",
+            "Grouped rules stored: rules=${groupedAutomationRules.size}, triggers=$groupedTriggerCount, calendarWindows=${calendarBusyWindows.size}"
+        )
 
         // 1. Reconstruct Time Rules
         val startHours = ruleIntent?.getIntArrayExtra("startHours") ?: intArrayOf()
@@ -158,7 +220,7 @@ class DndForegroundService : Service() {
         val rads = ruleIntent?.getIntArrayExtra("rads") ?: intArrayOf()
         val locAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("locAllowStarredContacts") ?: booleanArrayOf()
         val locAllowRepeatCallers = ruleIntent?.getBooleanArrayExtra("locAllowRepeatCallers") ?: booleanArrayOf()
-        activeLocationRules = locIds.indices.map { i ->
+        val flatLocationRules = locIds.indices.map { i ->
             DndLocationRule(
                 locIds[i],
                 stringAt(locNames, i, "Location rule ${i + 1}"),
@@ -169,9 +231,29 @@ class DndForegroundService : Service() {
                 boolAt(locAllowRepeatCallers, i)
             )
         }
+        val groupedLocationRules = groupedLocationRulesForFlatEvaluator()
+        val shouldUseGroupedGeofences = groupedLocationRules.isNotEmpty()
+        activeLocationRules = if (shouldUseGroupedGeofences) groupedLocationRules else flatLocationRules
 
         if (hasResolvedRulePayload) {
-            setupGeofences(locIds, lats, lngs, rads)
+            if (shouldUseGroupedGeofences) {
+                android.util.Log.d(
+                    "DndGeofence",
+                    "Geofence registration source=grouped, locationTriggers=${groupedLocationRules.size}. Request IDs are trigger IDs."
+                )
+                setupGeofences(
+                    groupedLocationRules.map { it.id }.toTypedArray(),
+                    groupedLocationRules.map { it.latitude }.toDoubleArray(),
+                    groupedLocationRules.map { it.longitude }.toDoubleArray(),
+                    groupedLocationRules.map { it.radius }.toIntArray()
+                )
+            } else {
+                android.util.Log.d(
+                    "DndGeofence",
+                    "Geofence registration source=flat fallback, locationRules=${locIds.size}"
+                )
+                setupGeofences(locIds, lats, lngs, rads)
+            }
         } else {
             android.util.Log.w(
                 "DndRuleCache",
@@ -215,14 +297,13 @@ class DndForegroundService : Service() {
         }
 
         logSyncedRuleExceptions()
+        notificationMonitoringText = monitoringNotificationText(locIds)
 
         // 5. Foreground Notification (Combined correctly)
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("DND Automation Active")
-            .setContentText("Monitoring ${activeRules.size} time(s), ${locIds.size} loc(s), ${targetAppPackages.size} app(s) & ${targetActivityTypes.size} act(s)")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setOngoing(true)
-            .build()
+        val notification = buildForegroundNotification(
+            inactiveNotificationTitle,
+            notificationMonitoringText
+        )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -256,7 +337,7 @@ class DndForegroundService : Service() {
         if (restoredIntent != null) {
             android.util.Log.d(
                 "DndRuleCache",
-                "Cached rule payload restored for service start: location=${restoredIntent.getStringArrayExtra("locIds")?.size ?: 0}"
+                "Cached rule payload restored for service start: location=${restoredIntent.getStringArrayExtra("locIds")?.size ?: 0}, groupedJsonLength=${restoredIntent.getStringExtra("automationRulesJson")?.length ?: 0}, calendarJsonLength=${restoredIntent.getStringExtra("calendarBusyWindowsJson")?.length ?: 0}"
             )
         }
         return restoredIntent
@@ -287,6 +368,334 @@ class DndForegroundService : Service() {
                 "Activity rule received: id=${it.id}, name=${it.name}, activity=${it.activityType}, starred=${it.allowStarredContacts}, repeat=${it.allowRepeatCallers}"
             )
         }
+    }
+
+    private fun monitoringNotificationText(locIds: Array<String>): String {
+        if (groupedAutomationRules.isNotEmpty()) {
+            android.util.Log.d(
+                "DndActivity",
+                "Foreground notification inactive state: monitoring ${groupedAutomationRules.size} grouped automation rule(s)"
+            )
+        } else {
+            android.util.Log.d(
+                "DndActivity",
+                "Foreground notification inactive state: monitoring ${activeRules.size} time(s), ${locIds.size} loc(s), ${targetAppPackages.size} app(s) & ${targetActivityTypes.size} act(s)"
+            )
+        }
+        return inactiveNotificationText
+    }
+
+    private fun notificationTitleForDecision(shouldBeActive: Boolean): String {
+        return if (shouldBeActive) activeNotificationTitle else inactiveNotificationTitle
+    }
+
+    private fun notificationTextForDecision(
+        shouldBeActive: Boolean,
+        matchingRuleNames: List<String>
+    ): String {
+        if (!shouldBeActive) return notificationMonitoringText
+
+        val activeRuleNames = matchingRuleNames
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        return if (activeRuleNames.isEmpty()) {
+            "Automation active"
+        } else if (activeRuleNames.size == 1) {
+            "Active: ${activeRuleNames.first()}"
+        } else {
+            "Active: ${activeRuleNames.first()} + ${activeRuleNames.size - 1} more"
+        }
+    }
+
+    private fun buildForegroundNotification(title: String, contentText: String): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(contentText)
+            .setSmallIcon(R.drawable.ic_quietly_notification)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun updateForegroundNotification(title: String, contentText: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(1, buildForegroundNotification(title, contentText))
+        android.util.Log.d(
+            "DndActivity",
+            "Foreground notification updated: title=$title, contentText=$contentText"
+        )
+    }
+
+    private fun parseGroupedAutomationRules(automationRulesJson: String?): List<AutomationRule> {
+        if (automationRulesJson.isNullOrBlank()) {
+            android.util.Log.d("DndGroupedRules", "automationRulesJson missing or blank; grouped rules unavailable.")
+            return emptyList()
+        }
+
+        android.util.Log.d(
+            "DndGroupedRules",
+            "automationRulesJson present: length=${automationRulesJson.length}"
+        )
+
+        return try {
+            val rulesJson = JSONArray(automationRulesJson)
+            val parsedRules = mutableListOf<AutomationRule>()
+            var skippedRules = 0
+            var skippedTriggers = 0
+
+            for (ruleIndex in 0 until rulesJson.length()) {
+                val ruleJson = rulesJson.optJSONObject(ruleIndex)
+                if (ruleJson == null) {
+                    skippedRules += 1
+                    android.util.Log.w("DndGroupedRules", "Skipping invalid grouped rule at index=$ruleIndex: not an object.")
+                    continue
+                }
+
+                val ruleId = ruleJson.optString("id").takeIf { it.isNotBlank() }
+                val ruleName = ruleJson.optString("name").takeIf { it.isNotBlank() }
+                if (ruleId == null || ruleName == null) {
+                    skippedRules += 1
+                    android.util.Log.w(
+                        "DndGroupedRules",
+                        "Skipping invalid grouped rule at index=$ruleIndex: hasId=${ruleId != null}, hasName=${ruleName != null}."
+                    )
+                    continue
+                }
+
+                val triggersJson = ruleJson.optJSONArray("triggers")
+                if (triggersJson == null) {
+                    skippedRules += 1
+                    android.util.Log.w("DndGroupedRules", "Skipping grouped rule $ruleId ($ruleName): triggers array missing.")
+                    continue
+                }
+
+                val triggers = mutableListOf<AutomationTrigger>()
+                for (triggerIndex in 0 until triggersJson.length()) {
+                    val triggerJson = triggersJson.optJSONObject(triggerIndex)
+                    if (triggerJson == null) {
+                        skippedTriggers += 1
+                        android.util.Log.w(
+                            "DndGroupedRules",
+                            "Skipping invalid trigger for rule $ruleId at index=$triggerIndex: not an object."
+                        )
+                        continue
+                    }
+
+                    val trigger = parseGroupedAutomationTrigger(ruleId, triggerIndex, triggerJson)
+                    if (trigger == null) {
+                        skippedTriggers += 1
+                    } else {
+                        triggers.add(trigger)
+                    }
+                }
+
+                parsedRules.add(
+                    AutomationRule(
+                        id = ruleId,
+                        name = ruleName,
+                        enabled = ruleJson.optBoolean("enabled", true),
+                        matchType = parseMatchType(
+                            ruleId,
+                            ruleJson.optInt("matchType", MATCH_TYPE_ANY)
+                        ),
+                        priority = parsePriority(ruleId, ruleJson),
+                        allowStarredContacts = ruleJson.optBoolean("allowStarredContacts", false),
+                        allowRepeatCallers = ruleJson.optBoolean("allowRepeatCallers", false),
+                        triggers = triggers
+                    )
+                )
+            }
+
+            val triggerCount = parsedRules.sumOf { it.triggers.size }
+            android.util.Log.d(
+                "DndGroupedRules",
+                "automationRulesJson parsed successfully: rules=${parsedRules.size}, triggers=$triggerCount, skippedRules=$skippedRules, skippedTriggers=$skippedTriggers"
+            )
+            parsedRules
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "DndGroupedRules",
+                "Failed to parse automationRulesJson; flat payload fallback remains active. exception=${e::class.java.simpleName}, message=${e.message}"
+            )
+            emptyList()
+        }
+    }
+
+    private fun parseGroupedAutomationTrigger(
+        ruleId: String,
+        triggerIndex: Int,
+        triggerJson: JSONObject
+    ): AutomationTrigger? {
+        val triggerId = triggerJson.optString("id").takeIf { it.isNotBlank() }
+        if (triggerId == null || !triggerJson.has("triggerType") || !triggerJson.has("enabled")) {
+            android.util.Log.w(
+                "DndGroupedRules",
+                "Skipping invalid trigger for rule $ruleId at index=$triggerIndex: hasId=${triggerId != null}, hasTriggerType=${triggerJson.has("triggerType")}, hasEnabled=${triggerJson.has("enabled")}."
+            )
+            return null
+        }
+
+        val triggerType = triggerJson.optInt("triggerType", -1)
+        if (triggerType !in TRIGGER_TYPE_TIME..TRIGGER_TYPE_CALENDAR) {
+            android.util.Log.w(
+                "DndGroupedRules",
+                "Skipping invalid trigger $triggerId for rule $ruleId: triggerType=$triggerType."
+            )
+            return null
+        }
+
+        return AutomationTrigger(
+            id = triggerId,
+            triggerType = triggerType,
+            enabled = triggerJson.optBoolean("enabled", true),
+            startHour = optionalInt(triggerJson, "startHour"),
+            startMinute = optionalInt(triggerJson, "startMinute"),
+            endHour = optionalInt(triggerJson, "endHour"),
+            endMinute = optionalInt(triggerJson, "endMinute"),
+            latitude = optionalDouble(triggerJson, "latitude"),
+            longitude = optionalDouble(triggerJson, "longitude"),
+            radius = optionalInt(triggerJson, "radius"),
+            packageName = optionalString(triggerJson, "packageName"),
+            activityType = optionalString(triggerJson, "activityType")
+        )
+    }
+
+    private fun parseCalendarBusyWindows(calendarBusyWindowsJson: String?): List<CalendarBusyWindow> {
+        if (calendarBusyWindowsJson.isNullOrBlank()) {
+            android.util.Log.d("DndCalendar", "calendarBusyWindowsJson missing or blank; no cached calendar windows.")
+            return emptyList()
+        }
+
+        return try {
+            val windowsJson = JSONArray(calendarBusyWindowsJson)
+            val windows = mutableListOf<CalendarBusyWindow>()
+            var skippedWindows = 0
+
+            for (index in 0 until windowsJson.length()) {
+                val windowJson = windowsJson.optJSONObject(index)
+                if (windowJson == null) {
+                    skippedWindows += 1
+                    continue
+                }
+
+                val triggerId = windowJson.optString("triggerId").takeIf { it.isNotBlank() }
+                val startMillis = windowJson.optLong("startMillis", 0L)
+                val endMillis = windowJson.optLong("endMillis", 0L)
+                if (triggerId == null || startMillis <= 0L || endMillis <= startMillis) {
+                    skippedWindows += 1
+                    android.util.Log.w(
+                        "DndCalendar",
+                        "Skipping invalid calendar window at index=$index: hasTriggerId=${triggerId != null}, startMillis=$startMillis, endMillis=$endMillis"
+                    )
+                    continue
+                }
+
+                windows.add(
+                    CalendarBusyWindow(
+                        triggerId = triggerId,
+                        startMillis = startMillis,
+                        endMillis = endMillis,
+                        isAllDay = windowJson.optBoolean("isAllDay", false),
+                        keywordMatched = windowJson.optBoolean("keywordMatched", true),
+                        fetchedAt = windowJson.optLong("fetchedAt", 0L)
+                    )
+                )
+            }
+
+            android.util.Log.d(
+                "DndCalendar",
+                "calendarBusyWindowsJson parsed: windows=${windows.size}, skipped=$skippedWindows"
+            )
+            windows
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "DndCalendar",
+                "Failed to parse calendarBusyWindowsJson; calendar triggers inactive. exception=${e::class.java.simpleName}, message=${e.message}"
+            )
+            emptyList()
+        }
+    }
+
+    private fun parseMatchType(ruleId: String, matchType: Int): Int {
+        if (matchType == MATCH_TYPE_ANY || matchType == MATCH_TYPE_ALL) return matchType
+        android.util.Log.w(
+            "DndGroupedRules",
+            "Unknown matchType=$matchType for grouped rule $ruleId; falling back to ANY."
+        )
+        return MATCH_TYPE_ANY
+    }
+
+    private fun parsePriority(ruleId: String, ruleJson: JSONObject): Int {
+        if (!ruleJson.has("priority") || ruleJson.isNull("priority")) {
+            android.util.Log.d(
+                "DndGroupedRules",
+                "Grouped rule $ruleId missing priority; defaulting to $DEFAULT_RULE_PRIORITY."
+            )
+            return DEFAULT_RULE_PRIORITY
+        }
+
+        val priority = ruleJson.optInt("priority", DEFAULT_RULE_PRIORITY)
+        if (priority <= 0) {
+            android.util.Log.w(
+                "DndGroupedRules",
+                "Grouped rule $ruleId has invalid priority=$priority; defaulting to $DEFAULT_RULE_PRIORITY."
+            )
+            return DEFAULT_RULE_PRIORITY
+        }
+        return priority
+    }
+
+    private fun optionalInt(json: JSONObject, key: String): Int? {
+        return if (json.has(key) && !json.isNull(key)) json.optInt(key) else null
+    }
+
+    private fun optionalDouble(json: JSONObject, key: String): Double? {
+        return if (json.has(key) && !json.isNull(key)) json.optDouble(key) else null
+    }
+
+    private fun optionalString(json: JSONObject, key: String): String? {
+        return if (json.has(key) && !json.isNull(key)) {
+            json.optString(key).takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+    }
+
+    private fun groupedLocationRulesForFlatEvaluator(): List<DndLocationRule> {
+        val locationRules = groupedAutomationRules
+            .filter { it.enabled }
+            .flatMap { rule ->
+                rule.triggers
+                    .filter { it.enabled && it.triggerType == TRIGGER_TYPE_LOCATION }
+                    .mapNotNull { trigger ->
+                        val latitude = trigger.latitude
+                        val longitude = trigger.longitude
+                        val radius = trigger.radius
+                        if (latitude == null || longitude == null || radius == null) {
+                            android.util.Log.w(
+                                "DndGeofence",
+                                "Skipping grouped location trigger ${trigger.id} for rule ${rule.id}: missing latitude/longitude/radius."
+                            )
+                            null
+                        } else {
+                            DndLocationRule(
+                                id = trigger.id,
+                                name = rule.name,
+                                latitude = latitude,
+                                longitude = longitude,
+                                radius = radius,
+                                allowStarredContacts = rule.allowStarredContacts,
+                                allowRepeatCallers = rule.allowRepeatCallers
+                            )
+                        }
+                    }
+            }
+
+        android.util.Log.d(
+            "DndGeofence",
+            "Grouped location trigger count=${locationRules.size}"
+        )
+        return locationRules
     }
 
     private fun setupActivityRecognition(shouldMonitor: Boolean) {
@@ -479,8 +888,10 @@ class DndForegroundService : Service() {
     }
 
     @Suppress("DEPRECATION")
-    private fun currentForegroundAppPackage(): String? {
-        if (targetAppPackages.isEmpty()) return null
+    private fun currentForegroundAppPackage(
+        shouldCheck: Boolean = targetAppPackages.isNotEmpty()
+    ): String? {
+        if (!shouldCheck) return null
 
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
@@ -504,9 +915,28 @@ class DndForegroundService : Service() {
 
         android.util.Log.d(
             "DndActivity",
-            "Current foreground package=$currentForegroundApp, eventTime=$currentForegroundEventTime, targetAppPackages=${targetAppPackages.joinToString()}"
+            "Current foreground package=$currentForegroundApp, eventTime=$currentForegroundEventTime, targetAppPackages=${targetAppPackages.joinToString()}, groupedRules=${groupedAutomationRules.size}"
         )
         return currentForegroundApp
+    }
+
+    private fun timeWindowMatches(
+        currentTotal: Int,
+        startHour: Int,
+        startMinute: Int,
+        endHour: Int,
+        endMinute: Int
+    ): Boolean {
+        val startTotal = (startHour * 60) + startMinute
+        val endTotal = (endHour * 60) + endMinute
+
+        return if (startTotal < endTotal) {
+            currentTotal in startTotal until endTotal
+        } else if (startTotal > endTotal) {
+            currentTotal >= startTotal || currentTotal < endTotal
+        } else {
+            false
+        }
     }
 
     private fun activityMatches(ruleActivityType: String, currentActivityInt: Int): Boolean {
@@ -629,20 +1059,266 @@ class DndForegroundService : Service() {
             return
         }
 
+        if (groupedAutomationRules.isNotEmpty()) {
+            android.util.Log.d(
+                "DndGroupedRules",
+                "Using grouped automation evaluation: source=$source, groupedRuleCount=${groupedAutomationRules.size}"
+            )
+            checkAndToggleDndGrouped(notificationManager, source, allowDisableGrace)
+        } else {
+            android.util.Log.d(
+                "DndGroupedRules",
+                "Using flat fallback automation evaluation: source=$source"
+            )
+            checkAndToggleDndFlatFallback(notificationManager, source, allowDisableGrace)
+        }
+    }
+
+    private fun checkAndToggleDndGrouped(
+        notificationManager: NotificationManager,
+        source: String,
+        allowDisableGrace: Boolean
+    ) {
+        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
+        val isCurrentlyInsideGeofence = prefs.getBoolean("isInsideGeofence", false)
+        val activeGeofenceIds = prefs.getStringSet("activeGeofenceIds", emptySet<String>()) ?: emptySet()
+        val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
+        val calendar = Calendar.getInstance()
+        val currentTotal = (calendar.get(Calendar.HOUR_OF_DAY) * 60) + calendar.get(Calendar.MINUTE)
+        val currentTimeMillis = System.currentTimeMillis()
+        val hasGroupedAppTrigger = groupedAutomationRules.any { rule ->
+            rule.enabled && rule.triggers.any { it.enabled && it.triggerType == TRIGGER_TYPE_APP }
+        }
+        val currentForegroundPackage = currentForegroundAppPackage(shouldCheck = hasGroupedAppTrigger)
+
+        val activeParentRules = mutableListOf<AutomationRule>()
+        var timeMatched = false
+        var locationMatched = false
+        var appMatched = false
+        var activityMatched = false
+        var calendarMatched = false
+
+        for (rule in groupedAutomationRules) {
+            if (!rule.enabled) {
+                android.util.Log.d(
+                    "DndGroupedRules",
+                    "Grouped rule skipped: id=${rule.id}, name=${rule.name}, reason=disabled"
+                )
+                continue
+            }
+
+            val enabledTriggers = rule.triggers.filter { it.enabled }
+            if (enabledTriggers.isEmpty()) {
+                android.util.Log.d(
+                    "DndGroupedRules",
+                    "Grouped rule inactive: id=${rule.id}, name=${rule.name}, reason=no-enabled-triggers"
+                )
+                continue
+            }
+
+            val effectiveMatchType = when (rule.matchType) {
+                MATCH_TYPE_ANY, MATCH_TYPE_ALL -> rule.matchType
+                else -> {
+                    android.util.Log.w(
+                        "DndGroupedRules",
+                        "Unknown matchType=${rule.matchType} during evaluation for rule ${rule.id}; falling back to ANY."
+                    )
+                    MATCH_TYPE_ANY
+                }
+            }
+
+            val triggerResults = enabledTriggers.map { trigger ->
+                val result = evaluateGroupedTrigger(
+                    trigger,
+                    currentTotal,
+                    currentTimeMillis,
+                    activeGeofenceIds,
+                    currentForegroundPackage,
+                    currentActivityInt
+                )
+                if (result) {
+                    when (trigger.triggerType) {
+                        TRIGGER_TYPE_TIME -> timeMatched = true
+                        TRIGGER_TYPE_LOCATION -> locationMatched = true
+                        TRIGGER_TYPE_APP -> appMatched = true
+                        TRIGGER_TYPE_ACTIVITY -> activityMatched = true
+                        TRIGGER_TYPE_CALENDAR -> calendarMatched = true
+                    }
+                }
+                android.util.Log.d(
+                    "DndGroupedRules",
+                    "Grouped trigger evaluated: ruleId=${rule.id}, ruleName=${rule.name}, triggerId=${trigger.id}, type=${triggerTypeName(trigger.triggerType)}, result=$result"
+                )
+                result
+            }
+
+            val ruleActive = if (effectiveMatchType == MATCH_TYPE_ALL) {
+                triggerResults.all { it }
+            } else {
+                triggerResults.any { it }
+            }
+
+            android.util.Log.d(
+                "DndGroupedRules",
+                "Grouped rule evaluated: id=${rule.id}, name=${rule.name}, matchType=${matchTypeName(effectiveMatchType)}, triggerCount=${enabledTriggers.size}, active=$ruleActive"
+            )
+
+            if (ruleActive) {
+                activeParentRules.add(rule)
+            }
+        }
+
+        val sortedActiveParentRules = sortActiveParentRules(activeParentRules)
+        val primaryRule = sortedActiveParentRules.firstOrNull()
+        val matchingRuleNames = sortedActiveParentRules.map { it.name }.distinct()
+        val shouldBeActive = sortedActiveParentRules.isNotEmpty()
+        val allowStarredContacts = primaryRule?.allowStarredContacts ?: false
+        val allowRepeatCallers = primaryRule?.allowRepeatCallers ?: false
+        val currentFilter = notificationManager.currentInterruptionFilter
+
+        android.util.Log.d(
+            "DndGroupedRules",
+            "Grouped evaluation result: source=$source, shouldBeActive=$shouldBeActive, activeParentRules=${matchingRuleNames.joinToString()}, primary=${primaryRule?.name ?: "none"}, primaryPriority=${primaryRule?.priority ?: "none"}, primaryStarred=$allowStarredContacts, primaryRepeat=$allowRepeatCallers, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, calendarWindows=${calendarBusyWindows.size}"
+        )
+
+        if (primaryRule != null) {
+            android.util.Log.d(
+                "DndExceptions",
+                "Grouped primary rule selected: id=${primaryRule.id}, name=${primaryRule.name}, priority=${primaryRule.priority}, starred=${primaryRule.allowStarredContacts}, repeat=${primaryRule.allowRepeatCallers}, alsoActive=${matchingRuleNames.drop(1).joinToString()}"
+            )
+        }
+
+        applyAutomationDecision(
+            notificationManager,
+            source,
+            allowDisableGrace,
+            shouldBeActive,
+            matchingRuleNames,
+            allowStarredContacts,
+            allowRepeatCallers,
+            timeMatched,
+            locationMatched,
+            appMatched,
+            activityMatched,
+            currentForegroundPackage,
+            isCurrentlyInsideGeofence,
+            activeGeofenceIds,
+            currentActivityInt,
+            currentFilter
+        )
+    }
+
+    private fun sortActiveParentRules(activeParentRules: List<AutomationRule>): List<AutomationRule> {
+        return activeParentRules.sortedWith { left, right ->
+            val priorityCompare = right.priority.compareTo(left.priority)
+            if (priorityCompare != 0) return@sortedWith priorityCompare
+
+            val leftNumericId = left.id.toLongOrNull()
+            val rightNumericId = right.id.toLongOrNull()
+            if (leftNumericId != null && rightNumericId != null) {
+                val numericCompare = leftNumericId.compareTo(rightNumericId)
+                if (numericCompare != 0) return@sortedWith numericCompare
+            }
+
+            left.id.compareTo(right.id)
+        }
+    }
+
+    private fun evaluateGroupedTrigger(
+        trigger: AutomationTrigger,
+        currentTotal: Int,
+        currentTimeMillis: Long,
+        activeGeofenceIds: Set<String>,
+        currentForegroundPackage: String?,
+        currentActivityInt: Int
+    ): Boolean {
+        return when (trigger.triggerType) {
+            TRIGGER_TYPE_TIME -> {
+                val startHour = trigger.startHour
+                val startMinute = trigger.startMinute
+                val endHour = trigger.endHour
+                val endMinute = trigger.endMinute
+                if (startHour == null || startMinute == null || endHour == null || endMinute == null) {
+                    android.util.Log.w(
+                        "DndGroupedRules",
+                        "Grouped time trigger inactive because time fields are incomplete: triggerId=${trigger.id}"
+                    )
+                    false
+                } else {
+                    timeWindowMatches(currentTotal, startHour, startMinute, endHour, endMinute)
+                }
+            }
+            TRIGGER_TYPE_LOCATION -> activeGeofenceIds.contains(trigger.id)
+            TRIGGER_TYPE_APP -> {
+                val packageName = trigger.packageName
+                packageName != null && packageName == currentForegroundPackage
+            }
+            TRIGGER_TYPE_ACTIVITY -> {
+                val activityType = trigger.activityType
+                activityType != null && activityMatches(activityType, currentActivityInt)
+            }
+            TRIGGER_TYPE_CALENDAR -> calendarTriggerMatches(trigger.id, currentTimeMillis)
+            else -> {
+                android.util.Log.w(
+                    "DndGroupedRules",
+                    "Grouped trigger inactive because triggerType is unknown: triggerId=${trigger.id}, triggerType=${trigger.triggerType}"
+                )
+                false
+            }
+        }
+    }
+
+    private fun calendarTriggerMatches(triggerId: String, currentTimeMillis: Long): Boolean {
+        val matchingWindows = calendarBusyWindows.filter { window ->
+            window.triggerId == triggerId &&
+                currentTimeMillis >= window.startMillis &&
+                currentTimeMillis < window.endMillis
+        }
+        val matched = matchingWindows.isNotEmpty()
+        val newestFetchedAt = matchingWindows.maxOfOrNull { it.fetchedAt } ?: 0L
+        val fetchedAgeMinutes = if (newestFetchedAt > 0L) {
+            (currentTimeMillis - newestFetchedAt).coerceAtLeast(0L) / 60000L
+        } else {
+            -1L
+        }
+        android.util.Log.d(
+            "DndCalendar",
+            "Calendar trigger evaluated: triggerId=$triggerId, matched=$matched, matchingWindowCount=${matchingWindows.size}, fetchedAgeMinutes=$fetchedAgeMinutes"
+        )
+        return matched
+    }
+
+    private fun triggerTypeName(triggerType: Int): String {
+        return when (triggerType) {
+            TRIGGER_TYPE_TIME -> "time"
+            TRIGGER_TYPE_LOCATION -> "location"
+            TRIGGER_TYPE_APP -> "app"
+            TRIGGER_TYPE_ACTIVITY -> "activity"
+            TRIGGER_TYPE_CALENDAR -> "calendar"
+            else -> "unknown"
+        }
+    }
+
+    private fun matchTypeName(matchType: Int): String {
+        return if (matchType == MATCH_TYPE_ALL) "ALL" else "ANY"
+    }
+
+    private fun checkAndToggleDndFlatFallback(
+        notificationManager: NotificationManager,
+        source: String,
+        allowDisableGrace: Boolean
+    ) {
         // 1. Time Check
         val calendar = Calendar.getInstance()
         val currentTotal = (calendar.get(Calendar.HOUR_OF_DAY) * 60) + calendar.get(Calendar.MINUTE)
         val matchingTimeRules = activeRules.filter { rule ->
-            val startTotal = (rule.startHour * 60) + rule.startMinute
-            val endTotal = (rule.endHour * 60) + rule.endMinute
-
-            if (startTotal < endTotal) {
-                currentTotal in startTotal until endTotal
-            } else if (startTotal > endTotal) {
-                currentTotal >= startTotal || currentTotal < endTotal
-            } else {
-                false
-            }
+            timeWindowMatches(
+                currentTotal,
+                rule.startHour,
+                rule.startMinute,
+                rule.endHour,
+                rule.endMinute
+            )
         }
 
         // 2. Location Check
@@ -685,6 +1361,55 @@ class DndForegroundService : Service() {
             "DND evaluation result: source=$source, shouldBeActive=$shouldBeActive, currentFilter=$currentFilter, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, targetAppPackages=${targetAppPackages.joinToString()}, matches=${matchingRuleNames.joinToString()}"
         )
 
+        val allowStarredContacts =
+            matchingTimeRules.any { it.allowStarredContacts } ||
+            matchingLocationRules.any { it.allowStarredContacts } ||
+            matchingAppRules.any { it.allowStarredContacts } ||
+            matchingActivityRules.any { it.allowStarredContacts }
+        val allowRepeatCallers =
+            matchingTimeRules.any { it.allowRepeatCallers } ||
+            matchingLocationRules.any { it.allowRepeatCallers } ||
+            matchingAppRules.any { it.allowRepeatCallers } ||
+            matchingActivityRules.any { it.allowRepeatCallers }
+
+        applyAutomationDecision(
+            notificationManager,
+            source,
+            allowDisableGrace,
+            shouldBeActive,
+            matchingRuleNames,
+            allowStarredContacts,
+            allowRepeatCallers,
+            timeMatched,
+            locationMatched,
+            appMatched,
+            activityMatched,
+            currentForegroundPackage,
+            isCurrentlyInsideGeofence,
+            activeGeofenceIds,
+            currentActivityInt,
+            currentFilter
+        )
+    }
+
+    private fun applyAutomationDecision(
+        notificationManager: NotificationManager,
+        source: String,
+        allowDisableGrace: Boolean,
+        shouldBeActive: Boolean,
+        matchingRuleNames: List<String>,
+        allowStarredContacts: Boolean,
+        allowRepeatCallers: Boolean,
+        timeMatched: Boolean,
+        locationMatched: Boolean,
+        appMatched: Boolean,
+        activityMatched: Boolean,
+        currentForegroundPackage: String?,
+        isCurrentlyInsideGeofence: Boolean,
+        activeGeofenceIds: Set<String>,
+        currentActivityInt: Int,
+        currentFilter: Int
+    ) {
         if (shouldBeActive) {
             cancelPendingDisableIfAny(
                 source,
@@ -694,16 +1419,15 @@ class DndForegroundService : Service() {
                 activityMatched
             )
             val activeRuleNamesText = matchingRuleNames.joinToString()
-            val allowStarredContacts =
-                matchingTimeRules.any { it.allowStarredContacts } ||
-                matchingLocationRules.any { it.allowStarredContacts } ||
-                matchingAppRules.any { it.allowStarredContacts } ||
-                matchingActivityRules.any { it.allowStarredContacts }
-            val allowRepeatCallers =
-                matchingTimeRules.any { it.allowRepeatCallers } ||
-                matchingLocationRules.any { it.allowRepeatCallers } ||
-                matchingAppRules.any { it.allowRepeatCallers } ||
-                matchingActivityRules.any { it.allowRepeatCallers }
+
+            android.util.Log.d(
+                "DndExceptions",
+                "Active rule exception policy: source=$source, starred=$allowStarredContacts, repeat=$allowRepeatCallers, activeRules=$activeRuleNamesText"
+            )
+            android.util.Log.d(
+                "DndActivity",
+                "Active automation rule names calculated: $activeRuleNamesText"
+            )
 
             applyDndPolicy(
                 notificationManager,
@@ -717,6 +1441,13 @@ class DndForegroundService : Service() {
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
             }
             AutomationDndStateStore.write(this, true, activeRuleNamesText)
+            updateForegroundNotification(
+                notificationTitleForDecision(shouldBeActive = true),
+                notificationTextForDecision(
+                    shouldBeActive = true,
+                    matchingRuleNames = matchingRuleNames
+                )
+            )
         } else {
             if (allowDisableGrace && currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
                 scheduleDisableAfterGrace(
@@ -741,6 +1472,13 @@ class DndForegroundService : Service() {
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
             }
             AutomationDndStateStore.write(this, false, "")
+            updateForegroundNotification(
+                notificationTitleForDecision(shouldBeActive = false),
+                notificationTextForDecision(
+                    shouldBeActive = false,
+                    matchingRuleNames = emptyList()
+                )
+            )
         }
     }
 

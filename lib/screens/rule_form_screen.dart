@@ -3,9 +3,13 @@ import 'package:drift/drift.dart' as d;
 import '../database/database.dart';
 // Use a prefix to prevent the "Rule" name collision error
 import '../models/rule.dart' as model;
-import '../models/rule_trigger_values.dart';
+import '../models/rule_trigger_draft.dart';
 import '../main.dart'; // Access global 'database'
 import '../services/app_catalog.dart';
+import '../services/calendar_auth_service.dart';
+import '../services/calendar_event_sync_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/calendar_trigger_fields.dart';
 import 'map_picker_screen.dart'; // Make sure this matches your map screen file name
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -41,6 +45,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   String? _packageName;
 
   String? _activityType;
+  String? _calendarId;
+  String? _calendarKeyword;
+  bool _calendarIncludeAllDay = false;
+  int? _calendarLookaheadHours;
   final Map<String, String> _availableActivities = {
     'IN_VEHICLE': 'In Vehicle',
     'ON_BICYCLE': 'On Bicycle',
@@ -52,8 +60,14 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
   List<AppCatalogEntry> _installedApps = [];
   bool _isLoadingApps = false;
+  bool _hasMultipleTriggers = false;
   bool _allowStarredContacts = false;
   bool _allowRepeatCallers = false;
+  int _priority = rulePriorityTime;
+  bool _priorityManuallySelected = false;
+  bool _isCalendarAuthBusy = false;
+  CalendarConnectionMetadata _calendarMetadata =
+      const CalendarConnectionMetadata(connected: false);
 
   void _showPermissionDialog(
     String title,
@@ -135,6 +149,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _selectedType = model.TriggerType.app;
       } else if (widget.rule!.type == 3) {
         _selectedType = model.TriggerType.activity;
+      } else if (widget.rule!.type == 4) {
+        _selectedType = model.TriggerType.calendar;
+      } else {
+        _selectedType = model.TriggerType.time;
       }
     } else {
       _selectedType = model.TriggerType.time;
@@ -170,6 +188,107 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
     _allowStarredContacts = widget.rule?.allowStarredContacts ?? false;
     _allowRepeatCallers = widget.rule?.allowRepeatCallers ?? false;
+    _priority = widget.rule?.priority ?? rulePriorityTime;
+    _priorityManuallySelected = widget.rule != null;
+
+    _loadCalendarMetadata();
+    _loadPrimaryTriggerFromRuleTriggers();
+  }
+
+  Future<void> _loadCalendarMetadata() async {
+    final metadata = await calendarAuthService.getConnectionMetadata();
+    if (!mounted) return;
+    setState(() => _calendarMetadata = metadata);
+  }
+
+  Future<void> _loadPrimaryTriggerFromRuleTriggers() async {
+    final rule = widget.rule;
+    if (rule == null) return;
+
+    final triggers = await database.getRuleTriggers(rule.id);
+    if (!mounted || triggers.isEmpty) return;
+
+    final trigger = triggers.first;
+    setState(() {
+      _hasMultipleTriggers = triggers.length > 1;
+      switch (trigger.triggerType) {
+        case 0:
+          _selectedType = model.TriggerType.time;
+          _startTime = trigger.startTime == null
+              ? null
+              : _parseTimeString(trigger.startTime!);
+          _endTime = trigger.endTime == null
+              ? null
+              : _parseTimeString(trigger.endTime!);
+          _latitude = null;
+          _longitude = null;
+          _radius = null;
+          _packageName = null;
+          _activityType = null;
+          _clearCalendarFields();
+          break;
+        case 1:
+          _selectedType = model.TriggerType.location;
+          _startTime = null;
+          _endTime = null;
+          _latitude = trigger.latitude;
+          _longitude = trigger.longitude;
+          _radius = trigger.radius?.round();
+          _packageName = null;
+          _activityType = null;
+          _clearCalendarFields();
+          break;
+        case 2:
+          _selectedType = model.TriggerType.app;
+          _startTime = null;
+          _endTime = null;
+          _latitude = null;
+          _longitude = null;
+          _radius = null;
+          _packageName = trigger.packageName;
+          _activityType = null;
+          _clearCalendarFields();
+          break;
+        case 3:
+          _selectedType = model.TriggerType.activity;
+          _startTime = null;
+          _endTime = null;
+          _latitude = null;
+          _longitude = null;
+          _radius = null;
+          _packageName = null;
+          _activityType = trigger.activityType;
+          _clearCalendarFields();
+          break;
+        case 4:
+          _selectedType = model.TriggerType.calendar;
+          _startTime = null;
+          _endTime = null;
+          _latitude = null;
+          _longitude = null;
+          _radius = null;
+          _packageName = null;
+          _activityType = null;
+          _calendarId = trigger.calendarId;
+          _calendarKeyword = trigger.calendarKeyword;
+          _calendarIncludeAllDay = trigger.calendarIncludeAllDay;
+          _calendarLookaheadHours = trigger.calendarLookaheadHours;
+          break;
+        default:
+          break;
+      }
+    });
+
+    if (trigger.triggerType == 2 && _installedApps.isEmpty) {
+      await _fetchInstalledApps();
+    }
+  }
+
+  void _clearCalendarFields() {
+    _calendarId = null;
+    _calendarKeyword = null;
+    _calendarIncludeAllDay = false;
+    _calendarLookaheadHours = null;
   }
 
   Future<void> _fetchInstalledApps() async {
@@ -226,6 +345,13 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   }
 
   Future<void> _saveRule() async {
+    if (_hasMultipleTriggers) {
+      _showSnackBar(
+        'This rule has multiple conditions. Open it from Rules to use the multi-condition editor.',
+      );
+      return;
+    }
+
     final triggerError = _triggerValidationError();
     if (!_formKey.currentState!.validate() || triggerError != null) {
       if (triggerError != null) {
@@ -248,60 +374,96 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       }
     }
 
-    final name = _nameController.text.trim();
+    final draft = _toRuleTriggerDraft();
+    final willBeEnabled = widget.rule?.isEnabled ?? true;
+    if (draft.triggerType == RuleTriggerDraft.calendar &&
+        willBeEnabled &&
+        !await calendarAuthService.isConnected()) {
+      _showSnackBar(
+        'Connect Google Calendar before saving an enabled Calendar rule.',
+      );
+      return;
+    }
 
-    final triggerValues = cleanedRuleTriggerValues(
-      triggerType: _selectedType,
-      startTime: _startTime?.format(context),
-      endTime: _endTime?.format(context),
-      latitude: _latitude,
-      longitude: _longitude,
-      radius: _radius,
-      packageName: _packageName,
-      activityType: _activityType,
-    );
+    final name = _nameController.text.trim();
+    final selectedPriority = _priorityManuallySelected
+        ? _priority
+        : priorityForTrigger(
+            triggerType: draft.triggerType,
+            activityType: draft.activityType,
+          );
 
     if (widget.rule == null) {
       // CREATE NEW RULE
-      await database.insertRule(
-        RulesCompanion.insert(
-          name: name,
-          type: triggerValues.type,
-          isEnabled: const d.Value(true),
-          startTime: triggerValues.startTime,
-          endTime: triggerValues.endTime,
-          latitude: triggerValues.latitude,
-          longitude: triggerValues.longitude,
-          radius: triggerValues.radius,
-          packageName: triggerValues.packageName,
-          activityType: triggerValues.activityType,
-          allowStarredContacts: d.Value(_allowStarredContacts),
-          allowRepeatCallers: d.Value(_allowRepeatCallers),
-        ),
+      final baseRule = RulesCompanion.insert(
+        name: name,
+        type: draft.triggerType,
+        isEnabled: const d.Value(true),
+        priority: d.Value(selectedPriority),
+        allowStarredContacts: d.Value(_allowStarredContacts),
+        allowRepeatCallers: d.Value(_allowRepeatCallers),
+      );
+      await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(baseRule, draft),
+        triggers: [draft.toCompanion()],
       );
     } else {
       // UPDATE EXISTING RULE
-      await database.updateRule(
-        widget.rule!.copyWith(
-          name: name,
-          type: triggerValues.type,
-          startTime: triggerValues.startTime,
-          endTime: triggerValues.endTime,
-          latitude: triggerValues.latitude,
-          longitude: triggerValues.longitude,
-          radius: triggerValues.radius,
-          packageName: triggerValues.packageName,
-          activityType: triggerValues.activityType,
-          allowStarredContacts: _allowStarredContacts,
-          allowRepeatCallers: _allowRepeatCallers,
-        ),
+      final baseRule = const RulesCompanion().copyWith(
+        name: d.Value(name),
+        isEnabled: d.Value(widget.rule!.isEnabled),
+        priority: d.Value(selectedPriority),
+        allowStarredContacts: d.Value(_allowStarredContacts),
+        allowRepeatCallers: d.Value(_allowRepeatCallers),
+      );
+      await database.updateRuleWithTriggers(
+        ruleId: widget.rule!.id,
+        rule: withFirstTriggerLegacyFields(baseRule, draft),
+        triggers: [draft.toCompanion()],
       );
     }
 
     // 🔴 FIX: Tell the Android Service the rules have changed!
+    await _syncCalendarBusyWindowsAfterSave(draft);
     await automationManager.syncRulesToAndroid();
 
     if (mounted) Navigator.pop(context);
+  }
+
+  RuleTriggerDraft _toRuleTriggerDraft() {
+    return RuleTriggerDraft(
+      triggerType: _triggerTypeFor(_selectedType),
+      startTime: _startTime?.format(context),
+      endTime: _endTime?.format(context),
+      latitude: _latitude,
+      longitude: _longitude,
+      radius: _radius?.toDouble(),
+      packageName: _packageName,
+      activityType: _activityType,
+      calendarId: _calendarId,
+      calendarKeyword: _calendarKeyword,
+      calendarIncludeAllDay: _calendarIncludeAllDay,
+      calendarLookaheadHours: _calendarLookaheadHours,
+    );
+  }
+
+  Future<void> _syncCalendarBusyWindowsAfterSave(RuleTriggerDraft draft) async {
+    if (draft.triggerType != RuleTriggerDraft.calendar) return;
+    if (!await calendarAuthService.isConnected()) {
+      if (mounted) {
+        _showSnackBar(
+          'Calendar rule saved. Connect Google Calendar to cache meeting times.',
+        );
+      }
+      return;
+    }
+
+    final result = await CalendarEventSyncService(
+      database: database,
+    ).syncAllCalendarTriggerBusyWindows();
+    if (!result.success && mounted) {
+      _showSnackBar(result.message);
+    }
   }
 
   String? _triggerValidationError() {
@@ -328,6 +490,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         if (_activityType == null || _activityType!.isEmpty) {
           return 'Please select an activity.';
         }
+        return null;
+      case model.TriggerType.calendar:
         return null;
     }
   }
@@ -372,7 +536,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
   void _deleteRule() async {
     if (widget.rule != null) {
-      await database.deleteRule(widget.rule!);
+      await database.deleteRuleAndTriggers(widget.rule!.id);
 
       // 🔴 FIX: Sync deletion to Android Service
       await automationManager.syncRulesToAndroid();
@@ -410,6 +574,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.rule != null;
+    final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       appBar: AppBar(
@@ -425,8 +590,15 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+            AppTheme.pagePadding,
+            AppTheme.pagePadding,
+            AppTheme.pagePadding,
+            AppTheme.sectionGap + bottomSafePadding,
+          ),
           children: [
+            _sectionTitle('Rule details'),
+            const SizedBox(height: 8),
             TextFormField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -436,10 +608,15 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               validator: (v) =>
                   (v == null || v.isEmpty) ? 'Enter a name' : null,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppTheme.sectionGap),
+            _sectionTitle('Condition'),
+            const SizedBox(height: 8),
             DropdownButtonFormField<model.TriggerType>(
-              value: _selectedType,
-              decoration: const InputDecoration(labelText: 'Trigger Type'),
+              initialValue: _selectedType,
+              decoration: const InputDecoration(
+                labelText: 'Trigger type',
+                border: OutlineInputBorder(),
+              ),
               items: model.TriggerType.values
                   .map(
                     (t) => DropdownMenuItem(
@@ -450,11 +627,11 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                   .toList(),
               onChanged: _handleTriggerTypeChange,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             if (_selectedType == model.TriggerType.time) ...[
               const Text(
-                "Schedule Configuration",
+                "Time condition",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Card(
@@ -496,7 +673,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               ),
             ] else if (_selectedType == model.TriggerType.location) ...[
               const Text(
-                "Location Configuration",
+                "Location condition",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Card(
@@ -527,13 +704,13 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               ),
             ] else if (_selectedType == model.TriggerType.app) ...[
               const Text(
-                "App Configuration",
+                "App condition",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Card(
                 child: _isLoadingApps
                     ? const Padding(
-                        padding: EdgeInsets.all(16.0),
+                        padding: EdgeInsets.all(AppTheme.cardPadding),
                         child: Center(child: CircularProgressIndicator()),
                       )
                     : DropdownButtonFormField<String>(
@@ -589,14 +766,14 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               ),
             ] else if (_selectedType == model.TriggerType.activity) ...[
               const Text(
-                "Activity Configuration",
+                "Activity condition",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: DropdownButtonFormField<String>(
-                    value: _activityType,
+                    initialValue: _activityType,
                     decoration: const InputDecoration(
                       labelText: 'Select an Activity',
                       border: InputBorder.none,
@@ -617,9 +794,36 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                   ),
                 ),
               ),
+            ] else if (_selectedType == model.TriggerType.calendar) ...[
+              const Text(
+                "Calendar condition",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTheme.cardPadding),
+                  child: CalendarTriggerFields(
+                    connected: _calendarMetadata.connected,
+                    email: _calendarMetadata.email,
+                    isConnecting: _isCalendarAuthBusy,
+                    includeAllDay: _calendarIncludeAllDay,
+                    onIncludeAllDayChanged: (value) {
+                      setState(() => _calendarIncludeAllDay = value);
+                    },
+                    keyword: _calendarKeyword,
+                    onKeywordChanged: (value) {
+                      _calendarKeyword = value;
+                    },
+                    onConnect: _connectCalendar,
+                  ),
+                ),
+              ),
             ],
 
-            const SizedBox(height: 24),
+            const SizedBox(height: AppTheme.sectionGap),
+            _buildPrioritySelector(),
+
+            const SizedBox(height: AppTheme.sectionGap),
             _buildExceptionControls(),
 
             const SizedBox(height: 40),
@@ -628,7 +832,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                 minimumSize: const Size.fromHeight(50),
               ),
               onPressed: _saveRule,
-              child: Text(isEditing ? 'UPDATE RULE' : 'SAVE RULE'),
+              child: Text(isEditing ? 'Update rule' : 'Save rule'),
             ),
           ],
         ),
@@ -643,8 +847,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         const Text("Exceptions", style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         Text(
-          "These exceptions will apply when this rule activates Do Not Disturb.",
-          style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
+          "These apply when this rule is the primary active rule.",
+          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
         ),
         const SizedBox(height: 8),
         Card(
@@ -667,6 +871,97 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _connectCalendar() async {
+    setState(() => _isCalendarAuthBusy = true);
+    final result = await calendarAuthService.connect();
+    final metadata = await calendarAuthService.getConnectionMetadata();
+
+    if (!mounted) return;
+    setState(() {
+      _calendarMetadata = metadata;
+      _isCalendarAuthBusy = false;
+    });
+    _showSnackBar(
+      result.connected
+          ? 'Google Calendar connected as ${result.email}.'
+          : result.message,
+    );
+  }
+
+  Widget _buildPrioritySelector() {
+    final value = _effectivePriority;
+    final choices = {...rulePriorityChoices, value}.toList()..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Priority", style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int>(
+          key: ValueKey('priority-$value'),
+          initialValue: value,
+          decoration: const InputDecoration(
+            labelText: 'Priority',
+            border: OutlineInputBorder(),
+          ),
+          items: choices
+              .map(
+                (priority) => DropdownMenuItem<int>(
+                  value: priority,
+                  child: Text(priorityDescription(priority)),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _priority = value;
+              _priorityManuallySelected = true;
+            });
+          },
+        ),
+        const SizedBox(height: 8),
+        Text(
+          "Higher priority rules become the main active rule when multiple rules match.",
+          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: AppTheme.pureBlack,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
+  int get _effectivePriority {
+    if (_priorityManuallySelected) return _priority;
+    return priorityForTrigger(
+      triggerType: _triggerTypeFor(_selectedType),
+      activityType: _activityType,
+    );
+  }
+
+  int _triggerTypeFor(model.TriggerType type) {
+    switch (type) {
+      case model.TriggerType.time:
+        return 0;
+      case model.TriggerType.location:
+        return 1;
+      case model.TriggerType.app:
+        return 2;
+      case model.TriggerType.activity:
+        return 3;
+      case model.TriggerType.calendar:
+        return 4;
+    }
   }
 
   void _showDeleteConfirmation() {

@@ -154,7 +154,7 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         )
 
         val notification = NotificationCompat.Builder(this, EMERGENCY_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_quietly_notification)
             .setContentTitle("Quietly Emergency Bypass")
             .setContentText("A monitored app notification matched your emergency keyword while DND was active.")
             .setStyle(
