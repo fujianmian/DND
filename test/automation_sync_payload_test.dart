@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dnd_auto_app/database/database.dart';
 import 'package:dnd_auto_app/models/rule_trigger_draft.dart';
+import 'package:dnd_auto_app/models/time_repeat.dart';
 import 'package:dnd_auto_app/services/automation_manager.dart';
 
 void main() {
@@ -49,6 +50,11 @@ void main() {
     expect(payload.timeRules, hasLength(1));
     expect(payload.timeRules.single['startHour'], 9);
     expect(payload.timeRules.single['endHour'], 17);
+    expect(payload.timeRules.single['timeRepeatMode'], timeRepeatEveryDay);
+    expect(
+      payload.timeRules.single['timeRepeatDaysMask'],
+      timeRepeatEveryDayMask,
+    );
     expect(payload.timeRules.single['allowStarredContacts'], isTrue);
     expect(payload.legacyFallbackCount, 0);
     expect(payload.groupedRuleCount, 1);
@@ -73,7 +79,55 @@ void main() {
     expect(trigger['startMinute'], 0);
     expect(trigger['endHour'], 17);
     expect(trigger['endMinute'], 0);
+    expect(trigger['timeRepeatMode'], timeRepeatEveryDay);
+    expect(trigger['timeRepeatDaysMask'], timeRepeatEveryDayMask);
   });
+
+  test(
+    'serializes custom time repeat settings in grouped and flat payloads',
+    () async {
+      const customMask =
+          timeRepeatMondayBit | timeRepeatWednesdayBit | timeRepeatFridayBit;
+      final ruleId = await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(name: 'Custom Focus', type: 0),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '08:00',
+            endTime: '12:00',
+            timeRepeatMode: timeRepeatCustom,
+            timeRepeatDaysMask: customMask,
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '08:00',
+            endTime: '12:00',
+            timeRepeatMode: timeRepeatCustom,
+            timeRepeatDaysMask: customMask,
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+
+      final payload = automationManager.buildSyncPayloadFromRuleTriggers(
+        await database.getEnabledRulesWithTriggers(),
+      );
+
+      expect(payload.timeRules, hasLength(1));
+      expect(payload.timeRules.single['id'], ruleId.toString());
+      expect(payload.timeRules.single['timeRepeatMode'], timeRepeatCustom);
+      expect(payload.timeRules.single['timeRepeatDaysMask'], customMask);
+
+      final groupedRules = jsonDecode(payload.automationRulesJson) as List;
+      final trigger =
+          ((groupedRules.single as Map<String, dynamic>)['triggers'] as List)
+                  .single
+              as Map<String, dynamic>;
+      expect(trigger['timeRepeatMode'], timeRepeatCustom);
+      expect(trigger['timeRepeatDaysMask'], customMask);
+    },
+  );
 
   test('falls back to legacy Rules fields when triggers are missing', () async {
     await database.insertRule(
@@ -96,6 +150,349 @@ void main() {
     expect(payload.groupedRuleCount, 0);
     expect(payload.groupedTriggerCount, 0);
     expect(jsonDecode(payload.automationRulesJson), isEmpty);
+  });
+
+  test('legacy time fallback defaults repeat settings to every day', () async {
+    await database.insertRule(
+      RulesCompanion.insert(
+        name: 'Legacy Time',
+        type: 0,
+        startTime: const d.Value('09:00'),
+        endTime: const d.Value('17:00'),
+      ),
+    );
+
+    final payload = automationManager.buildSyncPayloadFromRuleTriggers(
+      await database.getEnabledRulesWithTriggers(),
+    );
+
+    expect(payload.timeRules, hasLength(1));
+    expect(payload.timeRules.single['timeRepeatMode'], timeRepeatEveryDay);
+    expect(
+      payload.timeRules.single['timeRepeatDaysMask'],
+      timeRepeatEveryDayMask,
+    );
+    expect(payload.legacyFallbackCount, 1);
+    expect(jsonDecode(payload.automationRulesJson), isEmpty);
+  });
+
+  test(
+    'profile-aware sync includes unprofiled and enabled-profile rules',
+    () async {
+      const createdAt = 1760000000000;
+      final profileId = await database.createProfile(
+        ProfilesCompanion.insert(
+          name: 'Library',
+          createdAt: createdAt,
+          updatedAt: createdAt,
+        ),
+      );
+      final unprofiledRuleId = await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(name: 'Unprofiled Focus', type: 0),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '10:00',
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '10:00',
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+      final profiledRuleId = await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(
+            name: 'Library Focus',
+            type: 0,
+            profileId: d.Value(profileId),
+          ),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '10:00',
+            endTime: '11:00',
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '10:00',
+            endTime: '11:00',
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+
+      final payload = automationManager
+          .buildProfileAwareSyncPayloadFromRuleTriggers(
+            await database.getEnabledRulesWithTriggers(),
+            await database.watchProfiles(includeArchived: true).first,
+          );
+
+      expect(
+        payload.timeRules.map((rule) => rule['id']),
+        containsAll([unprofiledRuleId.toString(), profiledRuleId.toString()]),
+      );
+      expect(payload.groupedRuleCount, 2);
+    },
+  );
+
+  test('profile-aware sync skips rules in disabled profiles', () async {
+    const createdAt = 1760000000000;
+    final profileId = await database.createProfile(
+      ProfilesCompanion.insert(
+        name: 'Sleep',
+        isEnabled: const d.Value(false),
+        createdAt: createdAt,
+        updatedAt: createdAt,
+      ),
+    );
+    await database.createRuleWithTriggers(
+      rule: withFirstTriggerLegacyFields(
+        RulesCompanion.insert(
+          name: 'Disabled Profile Rule',
+          type: 0,
+          profileId: d.Value(profileId),
+        ),
+        const RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '22:00',
+          endTime: '07:00',
+        ),
+      ),
+      triggers: const [
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '22:00',
+          endTime: '07:00',
+        ),
+      ].map((draft) => draft.toCompanion()).toList(),
+    );
+
+    final payload = automationManager
+        .buildProfileAwareSyncPayloadFromRuleTriggers(
+          await database.getEnabledRulesWithTriggers(),
+          await database.watchProfiles(includeArchived: true).first,
+        );
+
+    expect(payload.timeRules, isEmpty);
+    expect(payload.groupedRuleCount, 0);
+    expect(jsonDecode(payload.automationRulesJson), isEmpty);
+  });
+
+  test(
+    'profile-aware sync skips rules in archived or missing profiles',
+    () async {
+      const createdAt = 1760000000000;
+      final archivedProfileId = await database.createProfile(
+        ProfilesCompanion.insert(
+          name: 'Archived',
+          isArchived: const d.Value(true),
+          createdAt: createdAt,
+          updatedAt: createdAt,
+        ),
+      );
+      await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(
+            name: 'Archived Profile Rule',
+            type: 0,
+            profileId: d.Value(archivedProfileId),
+          ),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '10:00',
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '10:00',
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+      await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(
+            name: 'Missing Profile Rule',
+            type: 0,
+            profileId: const d.Value(999),
+          ),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '10:00',
+            endTime: '11:00',
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '10:00',
+            endTime: '11:00',
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+
+      final payload = automationManager
+          .buildProfileAwareSyncPayloadFromRuleTriggers(
+            await database.getEnabledRulesWithTriggers(),
+            await database.watchProfiles(includeArchived: true).first,
+          );
+
+      expect(payload.timeRules, isEmpty);
+      expect(payload.groupedRuleCount, 0);
+    },
+  );
+
+  test('profile-aware sync merges exception flags with OR', () async {
+    const createdAt = 1760000000000;
+    final profileStarredId = await database.createProfile(
+      ProfilesCompanion.insert(
+        name: 'Starred Profile',
+        allowStarredContacts: const d.Value(true),
+        createdAt: createdAt,
+        updatedAt: createdAt,
+      ),
+    );
+    final profilePlainId = await database.createProfile(
+      ProfilesCompanion.insert(
+        name: 'Plain Profile',
+        createdAt: createdAt,
+        updatedAt: createdAt,
+      ),
+    );
+    final profileRepeatId = await database.createProfile(
+      ProfilesCompanion.insert(
+        name: 'Repeat Profile',
+        allowRepeatCallers: const d.Value(true),
+        createdAt: createdAt,
+        updatedAt: createdAt,
+      ),
+    );
+
+    final profileStarredRuleId = await database.createRuleWithTriggers(
+      rule: withFirstTriggerLegacyFields(
+        RulesCompanion.insert(
+          name: 'Profile Starred',
+          type: 0,
+          profileId: d.Value(profileStarredId),
+        ),
+        const RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '09:00',
+          endTime: '10:00',
+        ),
+      ),
+      triggers: const [
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '09:00',
+          endTime: '10:00',
+        ),
+      ].map((draft) => draft.toCompanion()).toList(),
+    );
+    final ruleStarredRuleId = await database.createRuleWithTriggers(
+      rule: withFirstTriggerLegacyFields(
+        RulesCompanion.insert(
+          name: 'Rule Starred',
+          type: 0,
+          profileId: d.Value(profilePlainId),
+          allowStarredContacts: const d.Value(true),
+        ),
+        const RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '10:00',
+          endTime: '11:00',
+        ),
+      ),
+      triggers: const [
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '10:00',
+          endTime: '11:00',
+        ),
+      ].map((draft) => draft.toCompanion()).toList(),
+    );
+    final bothFalseRuleId = await database.createRuleWithTriggers(
+      rule: withFirstTriggerLegacyFields(
+        RulesCompanion.insert(
+          name: 'Both False',
+          type: 0,
+          profileId: d.Value(profilePlainId),
+        ),
+        const RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '11:00',
+          endTime: '12:00',
+        ),
+      ),
+      triggers: const [
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '11:00',
+          endTime: '12:00',
+        ),
+      ].map((draft) => draft.toCompanion()).toList(),
+    );
+    final profileRepeatLegacyId = await database.insertRule(
+      RulesCompanion.insert(
+        name: 'Legacy Repeat Merge',
+        type: 2,
+        profileId: d.Value(profileRepeatId),
+        packageName: const d.Value('com.example.repeat'),
+      ),
+    );
+
+    final payload = automationManager
+        .buildProfileAwareSyncPayloadFromRuleTriggers(
+          await database.getEnabledRulesWithTriggers(),
+          await database.watchProfiles(includeArchived: true).first,
+        );
+    final flatById = {
+      for (final rule in [...payload.timeRules, ...payload.appRules])
+        rule['id'] as String: rule,
+    };
+
+    expect(
+      flatById[profileStarredRuleId.toString()]!['allowStarredContacts'],
+      isTrue,
+    );
+    expect(
+      flatById[ruleStarredRuleId.toString()]!['allowStarredContacts'],
+      isTrue,
+    );
+    expect(
+      flatById[bothFalseRuleId.toString()]!['allowStarredContacts'],
+      isFalse,
+    );
+    expect(
+      flatById[profileRepeatLegacyId.toString()]!['allowRepeatCallers'],
+      isTrue,
+    );
+    expect(payload.legacyFallbackCount, 1);
+
+    final groupedRules = jsonDecode(payload.automationRulesJson) as List;
+    final groupedById = {
+      for (final rule in groupedRules.cast<Map<String, dynamic>>())
+        rule['id'] as String: rule,
+    };
+    expect(
+      groupedById[profileStarredRuleId.toString()]!['allowStarredContacts'],
+      isTrue,
+    );
+    expect(
+      groupedById[ruleStarredRuleId.toString()]!['allowStarredContacts'],
+      isTrue,
+    );
+    expect(
+      groupedById[bothFalseRuleId.toString()]!['allowStarredContacts'],
+      isFalse,
+    );
   });
 
   test('flattens multiple triggers with parent rule metadata', () async {
@@ -132,6 +529,64 @@ void main() {
     expect(payload.appRules.single['allowStarredContacts'], isTrue);
     expect(payload.appRules.single['allowRepeatCallers'], isTrue);
   });
+
+  test(
+    'location payload remains coordinate based with saved location metadata',
+    () async {
+      final ruleId = await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(name: 'Library Focus', type: 1),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.location,
+            latitude: 3.139,
+            longitude: 101.6869,
+            radius: 150,
+            savedLocationId: 12,
+            locationLabel: 'Library',
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.location,
+            latitude: 3.139,
+            longitude: 101.6869,
+            radius: 150,
+            savedLocationId: 12,
+            locationLabel: 'Library',
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+
+      final payload = automationManager.buildSyncPayloadFromRuleTriggers(
+        await database.getEnabledRulesWithTriggers(),
+      );
+
+      expect(payload.locationRules, hasLength(1));
+      expect(payload.locationRules.single['id'], ruleId.toString());
+      expect(payload.locationRules.single['lat'], 3.139);
+      expect(payload.locationRules.single['lng'], 101.6869);
+      expect(payload.locationRules.single['rad'], 150);
+      expect(
+        payload.locationRules.single.containsKey('savedLocationId'),
+        isFalse,
+      );
+      expect(
+        payload.locationRules.single.containsKey('locationLabel'),
+        isFalse,
+      );
+
+      final groupedRules = jsonDecode(payload.automationRulesJson) as List;
+      final trigger =
+          ((groupedRules.single as Map<String, dynamic>)['triggers'] as List)
+                  .single
+              as Map<String, dynamic>;
+      expect(trigger['latitude'], 3.139);
+      expect(trigger['longitude'], 101.6869);
+      expect(trigger['radius'], 150);
+      expect(trigger.containsKey('savedLocationId'), isFalse);
+      expect(trigger.containsKey('locationLabel'), isFalse);
+    },
+  );
 
   test(
     'flattens three-condition ALL rule without enforcing matchType',
@@ -338,6 +793,71 @@ void main() {
     expect(window.containsKey('attendees'), isFalse);
     expect(window.containsKey('location'), isFalse);
   });
+
+  test(
+    'calendar busy windows payload includes all-day cached windows',
+    () async {
+      final triggerId = await database
+          .createRuleWithTriggers(
+            rule: withFirstTriggerLegacyFields(
+              RulesCompanion.insert(name: 'Exam Day', type: 4),
+              const RuleTriggerDraft(
+                triggerType: RuleTriggerDraft.calendar,
+                calendarIncludeAllDay: true,
+              ),
+            ),
+            triggers: const [
+              RuleTriggerDraft(
+                triggerType: RuleTriggerDraft.calendar,
+                calendarIncludeAllDay: true,
+              ),
+            ].map((draft) => draft.toCompanion()).toList(),
+          )
+          .then((ruleId) async {
+            final ruleWithTriggers = await database
+                .getEnabledRulesWithTriggers();
+            return ruleWithTriggers
+                .singleWhere((entry) => entry.rule.id == ruleId)
+                .triggers
+                .single
+                .id
+                .toString();
+          });
+
+      await database
+          .into(database.calendarBusyWindowsCache)
+          .insert(
+            CalendarBusyWindowsCacheCompanion.insert(
+              triggerId: triggerId,
+              eventIdHash: const d.Value('hashed-only'),
+              calendarId: const d.Value('primary'),
+              startMillis: DateTime(2026, 5, 13).millisecondsSinceEpoch,
+              endMillis: DateTime(2026, 5, 14).millisecondsSinceEpoch,
+              isAllDay: const d.Value(true),
+              keywordMatched: const d.Value(true),
+              fetchedAt: 1760000000000,
+            ),
+          );
+
+      final decoded =
+          jsonDecode(
+                await automationManager.buildCalendarBusyWindowsJson(database),
+              )
+              as List;
+
+      expect(decoded, hasLength(1));
+      final window = decoded.single as Map<String, dynamic>;
+      expect(window['triggerId'], triggerId);
+      expect(window['isAllDay'], isTrue);
+      expect(
+        window['startMillis'],
+        DateTime(2026, 5, 13).millisecondsSinceEpoch,
+      );
+      expect(window['endMillis'], DateTime(2026, 5, 14).millisecondsSinceEpoch);
+      expect(window.containsKey('eventIdHash'), isFalse);
+      expect(window.containsKey('title'), isFalse);
+    },
+  );
 
   test('empty calendar busy window cache serializes as empty array', () async {
     expect(

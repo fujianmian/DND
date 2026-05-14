@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dnd_auto_app/database/database.dart';
 import 'package:dnd_auto_app/models/rule_trigger_draft.dart';
+import 'package:dnd_auto_app/models/time_repeat.dart';
 
 void main() {
   late AppDatabase database;
@@ -14,6 +15,43 @@ void main() {
 
   tearDown(() async {
     await database.close();
+  });
+
+  test('time repeat constants and masks are stable', () {
+    expect(timeRepeatEveryDay, 0);
+    expect(timeRepeatWeekdays, 1);
+    expect(timeRepeatWeekends, 2);
+    expect(timeRepeatCustom, 3);
+    expect(timeRepeatMondayBit, 1);
+    expect(timeRepeatTuesdayBit, 2);
+    expect(timeRepeatWednesdayBit, 4);
+    expect(timeRepeatThursdayBit, 8);
+    expect(timeRepeatFridayBit, 16);
+    expect(timeRepeatSaturdayBit, 32);
+    expect(timeRepeatSundayBit, 64);
+    expect(timeRepeatEveryDayMask, 127);
+    expect(timeRepeatWeekdaysMask, 31);
+    expect(timeRepeatWeekendsMask, 96);
+  });
+
+  test('normalizes time repeat modes and labels', () {
+    expect(normalizeTimeRepeatMode(null), timeRepeatEveryDay);
+    expect(normalizeTimeRepeatMode(99), timeRepeatEveryDay);
+    expect(maskForRepeatMode(timeRepeatEveryDay), timeRepeatEveryDayMask);
+    expect(maskForRepeatMode(timeRepeatWeekdays), timeRepeatWeekdaysMask);
+    expect(maskForRepeatMode(timeRepeatWeekends), timeRepeatWeekendsMask);
+    expect(maskForRepeatMode(timeRepeatCustom), 0);
+    expect(repeatLabel(timeRepeatEveryDay), 'every day');
+    expect(repeatLabel(timeRepeatWeekdays), 'weekdays');
+    expect(repeatLabel(timeRepeatWeekends), 'weekends');
+    expect(
+      repeatLabel(
+        timeRepeatCustom,
+        daysMask:
+            timeRepeatMondayBit | timeRepeatWednesdayBit | timeRepeatFridayBit,
+      ),
+      'Mon/Wed/Fri',
+    );
   });
 
   test('validates rule name, match type, required fields, and duplicates', () {
@@ -72,6 +110,59 @@ void main() {
         triggers: const [RuleTriggerDraft(triggerType: RuleTriggerDraft.time)],
       ),
       'Condition 1: please select start and end times.',
+    );
+
+    expect(
+      validateRuleTriggerDrafts(
+        ruleName: 'Focus',
+        matchType: 0,
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '17:00',
+            timeRepeatMode: 99,
+          ),
+        ],
+      ),
+      'Condition 1: please choose a valid repeat setting.',
+    );
+
+    expect(
+      validateRuleTriggerDrafts(
+        ruleName: 'Focus',
+        matchType: 0,
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '17:00',
+            timeRepeatMode: timeRepeatCustom,
+            timeRepeatDaysMask: 0,
+          ),
+        ],
+      ),
+      'Condition 1: please select at least one repeat day.',
+    );
+
+    expect(
+      validateRuleTriggerDrafts(
+        ruleName: 'Focus',
+        matchType: 0,
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '09:00',
+            endTime: '17:00',
+            timeRepeatMode: timeRepeatCustom,
+            timeRepeatDaysMask:
+                timeRepeatMondayBit |
+                timeRepeatWednesdayBit |
+                timeRepeatFridayBit,
+          ),
+        ],
+      ),
+      isNull,
     );
 
     expect(
@@ -294,6 +385,74 @@ void main() {
     expect(rule.endTime.value, isNull);
   });
 
+  test('location draft preserves saved location snapshot values', () {
+    const draft = RuleTriggerDraft(
+      triggerType: RuleTriggerDraft.location,
+      latitude: 3.139,
+      longitude: 101.6869,
+      radius: 150,
+      savedLocationId: 12,
+      locationLabel: ' Library ',
+    );
+
+    final trigger = draft.toCompanion(ruleId: 42);
+    final rule = withFirstTriggerLegacyFields(
+      RulesCompanion.insert(name: 'Library Rule', type: 0),
+      draft,
+    );
+
+    expect(trigger.ruleId.value, 42);
+    expect(trigger.triggerType.value, RuleTriggerDraft.location);
+    expect(trigger.latitude.value, 3.139);
+    expect(trigger.longitude.value, 101.6869);
+    expect(trigger.radius.value, 150);
+    expect(trigger.savedLocationId.value, 12);
+    expect(trigger.locationLabel.value, 'Library');
+    expect(rule.type.value, RuleTriggerDraft.location);
+    expect(rule.latitude.value, 3.139);
+    expect(rule.longitude.value, 101.6869);
+    expect(rule.radius.value, 150);
+    expect(rule.savedLocationId.value, 12);
+    expect(rule.locationLabel.value, 'Library');
+  });
+
+  test(
+    'time draft defaults and custom repeat values persist to companions',
+    () {
+      const defaultDraft = RuleTriggerDraft(
+        triggerType: RuleTriggerDraft.time,
+        startTime: '09:00',
+        endTime: '17:00',
+      );
+      final defaultTrigger = defaultDraft.toCompanion(ruleId: 7);
+
+      expect(defaultDraft.timeRepeatMode, timeRepeatEveryDay);
+      expect(defaultDraft.timeRepeatDaysMask, timeRepeatEveryDayMask);
+      expect(defaultTrigger.timeRepeatMode.value, timeRepeatEveryDay);
+      expect(defaultTrigger.timeRepeatDaysMask.value, timeRepeatEveryDayMask);
+
+      const customMask =
+          timeRepeatMondayBit | timeRepeatWednesdayBit | timeRepeatFridayBit;
+      const customDraft = RuleTriggerDraft(
+        triggerType: RuleTriggerDraft.time,
+        startTime: '08:00',
+        endTime: '12:00',
+        timeRepeatMode: timeRepeatCustom,
+        timeRepeatDaysMask: customMask,
+      );
+      final customTrigger = customDraft.toCompanion(ruleId: 8);
+      final customRule = withFirstTriggerLegacyFields(
+        RulesCompanion.insert(name: 'Custom Time', type: 0),
+        customDraft,
+      );
+
+      expect(customTrigger.timeRepeatMode.value, timeRepeatCustom);
+      expect(customTrigger.timeRepeatDaysMask.value, customMask);
+      expect(customRule.timeRepeatMode.value, timeRepeatCustom);
+      expect(customRule.timeRepeatDaysMask.value, customMask);
+    },
+  );
+
   test('converts a calendar draft into trigger values', () {
     const draft = RuleTriggerDraft(
       triggerType: RuleTriggerDraft.calendar,
@@ -341,11 +500,122 @@ void main() {
     expect(fromTrigger.triggerType, RuleTriggerDraft.time);
     expect(fromTrigger.startTime, '09:00');
     expect(fromTrigger.endTime, '17:00');
+    expect(fromTrigger.timeRepeatMode, timeRepeatEveryDay);
+    expect(fromTrigger.timeRepeatDaysMask, timeRepeatEveryDayMask);
     expect(fromTrigger.enabled, isTrue);
     expect(fromLegacy.triggerType, RuleTriggerDraft.time);
     expect(fromLegacy.startTime, '09:00');
     expect(fromLegacy.endTime, '17:00');
+    expect(fromLegacy.timeRepeatMode, timeRepeatEveryDay);
+    expect(fromLegacy.timeRepeatDaysMask, timeRepeatEveryDayMask);
   });
+
+  test(
+    'converts existing saved location RuleTrigger and legacy Rule into drafts',
+    () async {
+      const draft = RuleTriggerDraft(
+        triggerType: RuleTriggerDraft.location,
+        latitude: 3.139,
+        longitude: 101.6869,
+        radius: 150,
+        savedLocationId: 12,
+        locationLabel: 'Library',
+      );
+      final ruleId = await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(name: 'Library', type: 1),
+          draft,
+        ),
+        triggers: [draft.toCompanion()],
+      );
+      final rule = await _rule(database, ruleId);
+      final trigger = (await database.getRuleTriggers(ruleId)).single;
+
+      final fromTrigger = RuleTriggerDraft.fromRuleTrigger(trigger);
+      final fromLegacy = RuleTriggerDraft.fromLegacyRule(rule);
+
+      expect(fromTrigger.triggerType, RuleTriggerDraft.location);
+      expect(fromTrigger.latitude, 3.139);
+      expect(fromTrigger.longitude, 101.6869);
+      expect(fromTrigger.radius, 150);
+      expect(fromTrigger.savedLocationId, 12);
+      expect(fromTrigger.locationLabel, 'Library');
+      expect(fromLegacy.triggerType, RuleTriggerDraft.location);
+      expect(fromLegacy.latitude, 3.139);
+      expect(fromLegacy.longitude, 101.6869);
+      expect(fromLegacy.radius, 150);
+      expect(fromLegacy.savedLocationId, 12);
+      expect(fromLegacy.locationLabel, 'Library');
+    },
+  );
+
+  test(
+    'converts existing custom repeat RuleTrigger and legacy Rule into drafts',
+    () async {
+      const customMask =
+          timeRepeatMondayBit | timeRepeatWednesdayBit | timeRepeatFridayBit;
+      final ruleId = await database.createRuleWithTriggers(
+        rule: withFirstTriggerLegacyFields(
+          RulesCompanion.insert(name: 'Custom Time', type: 0),
+          const RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '08:00',
+            endTime: '12:00',
+            timeRepeatMode: timeRepeatCustom,
+            timeRepeatDaysMask: customMask,
+          ),
+        ),
+        triggers: const [
+          RuleTriggerDraft(
+            triggerType: RuleTriggerDraft.time,
+            startTime: '08:00',
+            endTime: '12:00',
+            timeRepeatMode: timeRepeatCustom,
+            timeRepeatDaysMask: customMask,
+          ),
+        ].map((draft) => draft.toCompanion()).toList(),
+      );
+      final rule = await _rule(database, ruleId);
+      final trigger = (await database.getRuleTriggers(ruleId)).single;
+
+      final fromTrigger = RuleTriggerDraft.fromRuleTrigger(trigger);
+      final fromLegacy = RuleTriggerDraft.fromLegacyRule(rule);
+
+      expect(rule.timeRepeatMode, timeRepeatCustom);
+      expect(rule.timeRepeatDaysMask, customMask);
+      expect(trigger.timeRepeatMode, timeRepeatCustom);
+      expect(trigger.timeRepeatDaysMask, customMask);
+      expect(fromTrigger.timeRepeatMode, timeRepeatCustom);
+      expect(fromTrigger.timeRepeatDaysMask, customMask);
+      expect(fromLegacy.timeRepeatMode, timeRepeatCustom);
+      expect(fromLegacy.timeRepeatDaysMask, customMask);
+    },
+  );
+
+  test(
+    'createSingleTriggerRule mirrors repeat fields into RuleTriggers',
+    () async {
+      const customMask = timeRepeatTuesdayBit | timeRepeatThursdayBit;
+      final ruleId = await database.createSingleTriggerRule(
+        RulesCompanion.insert(
+          name: 'Single Custom',
+          type: RuleTriggerDraft.time,
+          startTime: const d.Value('10:00'),
+          endTime: const d.Value('14:00'),
+          timeRepeatMode: const d.Value(timeRepeatCustom),
+          timeRepeatDaysMask: const d.Value(customMask),
+        ),
+      );
+
+      final rule = await _rule(database, ruleId);
+      final trigger = (await database.getRuleTriggers(ruleId)).single;
+
+      expect(rule.timeRepeatMode, timeRepeatCustom);
+      expect(rule.timeRepeatDaysMask, customMask);
+      expect(trigger.timeRepeatMode, timeRepeatCustom);
+      expect(trigger.timeRepeatDaysMask, customMask);
+    },
+  );
 
   test('converts existing calendar RuleTrigger into a draft', () async {
     final ruleId = await database.createRuleWithTriggers(
@@ -395,6 +665,8 @@ void main() {
           latitude: 3.139,
           longitude: 101.6869,
           radius: 125,
+          savedLocationId: 9,
+          locationLabel: 'Campus Library',
         ),
         RuleTriggerDraft(
           triggerType: RuleTriggerDraft.app,
@@ -424,10 +696,14 @@ void main() {
       expect(rule.latitude, 3.139);
       expect(rule.longitude, 101.6869);
       expect(rule.radius, 125);
+      expect(rule.savedLocationId, 9);
+      expect(rule.locationLabel, 'Campus Library');
       expect(rule.packageName, isNull);
       expect(triggers, hasLength(2));
       expect(triggers.first.ruleId, ruleId);
       expect(triggers.first.triggerType, RuleTriggerDraft.location);
+      expect(triggers.first.savedLocationId, 9);
+      expect(triggers.first.locationLabel, 'Campus Library');
       expect(triggers.last.packageName, 'com.example.study');
     },
   );

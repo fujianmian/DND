@@ -38,6 +38,8 @@ void main() {
     });
 
     test('detects all-day events and respects include-all-day', () {
+      final localAllDayStart = DateTime(2026, 5, 12);
+      final localAllDayEnd = DateTime(2026, 5, 13);
       final event = Event(
         id: 'all-day-event',
         summary: 'Exam day',
@@ -69,6 +71,67 @@ void main() {
 
       expect(included, isNotNull);
       expect(included!.isAllDay, isTrue);
+      expect(included.startMillis, localAllDayStart.millisecondsSinceEpoch);
+      expect(included.endMillis, localAllDayEnd.millisecondsSinceEpoch);
+      expect(
+        DateTime(2026, 5, 12, 12).millisecondsSinceEpoch,
+        inInclusiveRange(included.startMillis, included.endMillis - 1),
+      );
+    });
+
+    test(
+      'includes transparent all-day events when include-all-day is enabled',
+      () {
+        final event = Event(
+          id: 'transparent-all-day-event',
+          summary: 'Exam day',
+          transparency: 'transparent',
+          start: EventDateTime(date: DateTime.utc(2026, 5, 13)),
+          end: EventDateTime(date: DateTime.utc(2026, 5, 14)),
+        );
+
+        final included = CalendarEventSyncService.eventToBusyWindow(
+          event: event,
+          triggerId: '42',
+          calendarId: primaryCalendarId,
+          includeAllDay: true,
+          keyword: null,
+          fetchedAtMillis: 123,
+        );
+
+        expect(included, isNotNull);
+        expect(included!.isAllDay, isTrue);
+        expect(
+          included.startMillis,
+          DateTime(2026, 5, 13).millisecondsSinceEpoch,
+        );
+        expect(
+          included.endMillis,
+          DateTime(2026, 5, 14).millisecondsSinceEpoch,
+        );
+      },
+    );
+
+    test('still skips transparent timed events', () {
+      final event = Event(
+        id: 'transparent-timed-event',
+        summary: 'Focus time',
+        transparency: 'transparent',
+        start: EventDateTime(dateTime: DateTime.utc(2026, 5, 13, 9)),
+        end: EventDateTime(dateTime: DateTime.utc(2026, 5, 13, 10)),
+      );
+
+      expect(
+        CalendarEventSyncService.eventToBusyWindow(
+          event: event,
+          triggerId: '42',
+          calendarId: primaryCalendarId,
+          includeAllDay: true,
+          keyword: null,
+          fetchedAtMillis: 123,
+        ),
+        isNull,
+      );
     });
 
     test('matches title keywords without storing event title', () {
@@ -98,6 +161,36 @@ void main() {
       );
 
       expect(window, isNotNull);
+    });
+
+    test('checks all-day event title keywords in memory only', () {
+      final event = Event(
+        id: 'keyword-all-day-event',
+        summary: 'Final Exam Day',
+        start: EventDateTime(date: DateTime.utc(2026, 5, 13)),
+        end: EventDateTime(date: DateTime.utc(2026, 5, 14)),
+      );
+
+      final skipped = CalendarEventSyncService.eventToBusyWindow(
+        event: event,
+        triggerId: '42',
+        calendarId: primaryCalendarId,
+        includeAllDay: true,
+        keyword: 'meeting',
+        fetchedAtMillis: 123,
+      );
+      final included = CalendarEventSyncService.eventToBusyWindow(
+        event: event,
+        triggerId: '42',
+        calendarId: primaryCalendarId,
+        includeAllDay: true,
+        keyword: 'exam',
+        fetchedAtMillis: 123,
+      );
+
+      expect(skipped, isNull);
+      expect(included, isNotNull);
+      expect(included!.eventIdHash, isNot('keyword-all-day-event'));
     });
 
     test('skips cancelled, transparent, and malformed events', () {

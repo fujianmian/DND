@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../services/dnd_service.dart';
 import '../theme/app_theme.dart';
 import 'create_rule_wizard.dart';
 
@@ -13,6 +14,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  bool _pauseActionBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -37,47 +40,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Quietly')),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          AppTheme.pagePadding,
-          AppTheme.pagePadding,
-          AppTheme.pagePadding,
-          AppTheme.sectionGap + bottomSafePadding,
-        ),
-        children: [
-          ValueListenableBuilder<bool>(
-            valueListenable: automationManager.isDndEnabled,
-            builder: (context, isDndActive, _) {
-              return ValueListenableBuilder<List<String>>(
-                valueListenable: automationManager.activeRuleDisplayNames,
-                builder: (context, activeRuleNames, _) {
-                  return ValueListenableBuilder<String>(
-                    valueListenable: automationManager.nextChangeText,
-                    builder: (context, detailText, _) {
-                      return ValueListenableBuilder<DateTime?>(
-                        valueListenable:
-                            automationManager.lastAutomationDndChangedAt,
-                        builder: (context, changedAt, _) {
-                          return _buildStatusCard(
-                            isDndActive: isDndActive,
-                            activeRuleNames: activeRuleNames,
-                            detailText: detailText,
-                            changedAt: changedAt,
+    return ValueListenableBuilder<AutomationPauseState>(
+      valueListenable: automationManager.automationPauseState,
+      builder: (context, pauseState, _) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('Quietly')),
+          body: ListView(
+            padding: EdgeInsets.fromLTRB(
+              AppTheme.pagePadding,
+              AppTheme.pagePadding,
+              AppTheme.pagePadding,
+              AppTheme.sectionGap + bottomSafePadding,
+            ),
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: automationManager.isDndEnabled,
+                builder: (context, isDndActive, _) {
+                  return ValueListenableBuilder<List<String>>(
+                    valueListenable: automationManager.activeRuleDisplayNames,
+                    builder: (context, activeRuleNames, _) {
+                      return ValueListenableBuilder<String>(
+                        valueListenable: automationManager.nextChangeText,
+                        builder: (context, detailText, _) {
+                          return ValueListenableBuilder<DateTime?>(
+                            valueListenable:
+                                automationManager.lastAutomationDndChangedAt,
+                            builder: (context, changedAt, _) {
+                              return _buildStatusCard(
+                                isDndActive: isDndActive,
+                                activeRuleNames: activeRuleNames,
+                                detailText: detailText,
+                                changedAt: changedAt,
+                                pauseState: pauseState,
+                              );
+                            },
                           );
                         },
                       );
                     },
                   );
                 },
-              );
-            },
+              ),
+              const SizedBox(height: AppTheme.sectionGap),
+              _buildQuickActions(pauseState),
+            ],
           ),
-          const SizedBox(height: AppTheme.sectionGap),
-          _buildQuickActions(),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -86,35 +95,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required List<String> activeRuleNames,
     required String detailText,
     required DateTime? changedAt,
+    required AutomationPauseState pauseState,
   }) {
+    final isPaused = pauseState.automationPaused && !pauseState.isExpired;
     final primaryRuleName = activeRuleNames.isEmpty
         ? null
         : activeRuleNames.first;
     final alsoActiveCount = activeRuleNames.length > 1
         ? activeRuleNames.length - 1
         : 0;
-    final title = isDndActive
-        ? 'DND Automation Active'
-        : 'Quietly is monitoring';
-    final statusText = isDndActive && primaryRuleName != null
-        ? 'Active: $primaryRuleName'
-        : 'No automation rule is active';
+    final title = isPaused
+        ? 'Automation paused'
+        : (isDndActive ? 'DND Automation Active' : 'Quietly is monitoring');
+    final statusText = isPaused
+        ? _pausedStatusText(pauseState)
+        : (isDndActive && primaryRuleName != null
+              ? 'Active: $primaryRuleName'
+              : 'No automation rule is active');
     final changedText = changedAt == null
         ? null
         : '${isDndActive ? 'Active' : 'Updated'} since ${_formatDateTime(changedAt)}';
+    final useActiveStyle = isDndActive && !isPaused;
 
     return Container(
       decoration: BoxDecoration(
-        gradient: isDndActive
+        gradient: useActiveStyle
             ? const LinearGradient(
                 colors: [AppTheme.logoPurple, AppTheme.logoBlue],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               )
             : null,
-        color: isDndActive ? null : AppTheme.pureWhite,
+        color: useActiveStyle ? null : AppTheme.pureWhite,
         borderRadius: AppTheme.largeCardBorderRadius,
-        border: isDndActive
+        border: useActiveStyle
             ? null
             : Border.all(color: AppTheme.pureBlack.withValues(alpha: 0.1)),
       ),
@@ -122,11 +136,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Column(
         children: [
           Icon(
-            isDndActive
+            isPaused
+                ? Icons.pause_circle_outline_rounded
+                : isDndActive
                 ? Icons.notifications_off_rounded
                 : Icons.notifications_active_rounded,
             size: 64,
-            color: isDndActive ? AppTheme.pureWhite : AppTheme.logoBlue,
+            color: useActiveStyle ? AppTheme.pureWhite : AppTheme.logoBlue,
           ),
           const SizedBox(height: 16),
           Text(
@@ -134,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: isDndActive ? AppTheme.pureWhite : AppTheme.pureBlack,
+              color: useActiveStyle ? AppTheme.pureWhite : AppTheme.pureBlack,
             ),
             textAlign: TextAlign.center,
           ),
@@ -143,13 +159,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             statusText,
             style: TextStyle(
               fontSize: 14,
-              color: isDndActive
+              color: useActiveStyle
                   ? AppTheme.pureWhite.withValues(alpha: 0.85)
                   : AppTheme.pureBlack.withValues(alpha: 0.6),
             ),
             textAlign: TextAlign.center,
           ),
-          if (alsoActiveCount > 0) ...[
+          if (!isPaused && alsoActiveCount > 0) ...[
             const SizedBox(height: 6),
             Text(
               '+ $alsoActiveCount more active',
@@ -164,10 +180,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
           const SizedBox(height: 8),
           Text(
-            changedText ?? detailText,
+            isPaused
+                ? 'Rules and profiles stay enabled.'
+                : changedText ?? detailText,
             style: TextStyle(
               fontSize: 12,
-              color: isDndActive
+              color: useActiveStyle
                   ? AppTheme.pureWhite.withValues(alpha: 0.7)
                   : AppTheme.pureBlack.withValues(alpha: 0.45),
             ),
@@ -178,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildQuickActions() {
+  Widget _buildQuickActions(AutomationPauseState pauseState) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppTheme.cardPadding),
@@ -193,29 +211,154 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Create rule'),
-                    onPressed: _openCreateRule,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final pauseButton =
+                    pauseState.automationPaused && !pauseState.isExpired
+                    ? ElevatedButton.icon(
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text(
+                          'Resume automation',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onPressed: _pauseActionBusy ? null : _resumeAutomation,
+                      )
+                    : ElevatedButton.icon(
+                        icon: const Icon(Icons.pause_rounded),
+                        label: const Text(
+                          'Pause automation',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onPressed: _pauseActionBusy
+                            ? null
+                            : _showPauseAutomationDialog,
+                      );
+                final createButton = OutlinedButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text(
+                    'Create rule',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  onPressed: _openCreateRule,
+                );
+
+                if (constraints.maxWidth < 340) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      pauseButton,
+                      const SizedBox(height: 8),
+                      createButton,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: pauseButton),
+                    const SizedBox(width: 12),
+                    Expanded(child: createButton),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.rule_outlined),
+                label: const Text(
+                  'Manage rules',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.rule_outlined),
-                    label: const Text('Manage rules'),
-                    onPressed: widget.onOpenRules,
-                  ),
-                ),
-              ],
+                onPressed: widget.onOpenRules,
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _showPauseAutomationDialog() async {
+    final selection = await showDialog<_PauseSelection>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pause Quietly automation'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PauseOptionTile(
+              label: '15 minutes',
+              onTap: () => Navigator.pop(
+                context,
+                const _PauseSelection(Duration(minutes: 15)),
+              ),
+            ),
+            _PauseOptionTile(
+              label: '30 minutes',
+              onTap: () => Navigator.pop(
+                context,
+                const _PauseSelection(Duration(minutes: 30)),
+              ),
+            ),
+            _PauseOptionTile(
+              label: '1 hour',
+              onTap: () => Navigator.pop(
+                context,
+                const _PauseSelection(Duration(hours: 1)),
+              ),
+            ),
+            _PauseOptionTile(
+              label: 'Until I resume',
+              onTap: () => Navigator.pop(context, const _PauseSelection(null)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || selection == null) return;
+
+    await _pauseAutomation(selection.duration);
+  }
+
+  Future<void> _pauseAutomation(Duration? duration) async {
+    setState(() => _pauseActionBusy = true);
+    await DndService.pauseAutomation(duration);
+    await automationManager.refreshUiState();
+    if (!mounted) return;
+    setState(() => _pauseActionBusy = false);
+    _showSnackBar(
+      duration == null
+          ? 'Automation paused until resumed.'
+          : 'Automation paused for ${_durationLabel(duration)}.',
+    );
+  }
+
+  Future<void> _resumeAutomation() async {
+    setState(() => _pauseActionBusy = true);
+    await DndService.resumeAutomation();
+    await automationManager.refreshUiState();
+    if (!mounted) return;
+    setState(() => _pauseActionBusy = false);
+    _showSnackBar('Automation resumed.');
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openCreateRule() async {
@@ -225,10 +368,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  String _pausedStatusText(AutomationPauseState pauseState) {
+    if (pauseState.isIndefinite) return 'Paused until resumed';
+    final pauseUntil = pauseState.pauseUntil;
+    if (pauseUntil == null) return 'Paused until resumed';
+    return 'Paused until ${_formatTimeOfDay(pauseUntil)}';
+  }
+
+  String _durationLabel(Duration duration) {
+    if (duration.inMinutes == 15) return '15 minutes';
+    if (duration.inMinutes == 30) return '30 minutes';
+    if (duration.inHours == 1) return '1 hour';
+    return '${duration.inMinutes} minutes';
+  }
+
   String _formatDateTime(DateTime dateTime) {
     final local = dateTime.toLocal();
-    final hour = local.hour.toString().padLeft(2, '0');
+    return _formatTimeOfDay(local);
+  }
+
+  String _formatTimeOfDay(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    return '$hour12:$minute $period';
+  }
+}
+
+class _PauseSelection {
+  const _PauseSelection(this.duration);
+
+  final Duration? duration;
+}
+
+class _PauseOptionTile extends StatelessWidget {
+  const _PauseOptionTile({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      onTap: onTap,
+    );
   }
 }

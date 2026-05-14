@@ -2,6 +2,26 @@
 
 A new Flutter project.
 
+## Calendar Google Sign-In setup
+
+Google Calendar sign-in on Android needs two OAuth clients in Google Cloud:
+
+- Create an Android OAuth client using this app's `applicationId` and the
+  signing certificate SHA-1.
+- Create a Web application OAuth client and use that Web client ID as
+  `GOOGLE_SERVER_CLIENT_ID`. Do not use the Android OAuth client ID for this
+  value.
+
+Pass the Web client ID at run/build time:
+
+```sh
+flutter run --dart-define=GOOGLE_SERVER_CLIENT_ID=xxx.apps.googleusercontent.com
+flutter build apk --debug --dart-define=GOOGLE_SERVER_CLIENT_ID=xxx.apps.googleusercontent.com
+```
+
+For local development, `.env` may also define `GOOGLE_SERVER_CLIENT_ID`, but
+`--dart-define` takes precedence and avoids committing real client IDs.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

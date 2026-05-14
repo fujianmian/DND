@@ -38,7 +38,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('My Rules')),
       body: StreamBuilder<List<RuleWithTriggers>>(
-        stream: database.watchRulesWithTriggers(),
+        stream: database.watchStandaloneRulesWithTriggers(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -77,6 +77,8 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                 children: [
                                   Text(
                                     rule.name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
@@ -90,6 +92,8 @@ class _RuleListScreenState extends State<RuleListScreen> {
                                       const SizedBox(width: 6),
                                       Text(
                                         rule.isEnabled ? 'Enabled' : 'Paused',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
@@ -260,6 +264,8 @@ class _RuleListScreenState extends State<RuleListScreen> {
         Expanded(
           child: Text(
             _triggerLabel(entry),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppTheme.pureBlack,
               fontWeight: FontWeight.w600,
@@ -375,6 +381,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
             ),
             child: Text(
               label,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: AppTheme.pureBlack),
             ),
@@ -392,7 +399,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
           const Icon(Icons.auto_awesome, size: 64, color: AppTheme.logoCyan),
           const SizedBox(height: 16),
           const Text(
-            'No rules yet',
+            'No standalone rules yet',
             style: TextStyle(
               fontSize: 20,
               color: AppTheme.pureBlack,
@@ -401,7 +408,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the + button to automate your peace of mind.',
+            'Create a rule here, or use Profiles for scenario-based rule groups.',
             style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.6)),
           ),
         ],

@@ -1,4 +1,5 @@
 import '../database/database.dart';
+import 'time_repeat.dart';
 
 typedef AppLabelResolver = String Function(String? packageName);
 
@@ -48,10 +49,13 @@ class RuleTriggerSummaryFormatter {
       case 0:
         final start = trigger.startTime ?? '--';
         final end = trigger.endTime ?? '--';
-        return 'Time: $start - $end';
+        final repeat = repeatLabel(
+          trigger.timeRepeatMode,
+          daysMask: trigger.timeRepeatDaysMask,
+        );
+        return 'Time: $start-$end, $repeat';
       case 1:
-        final radius = _formatRadius(trigger.radius);
-        return 'Location$radius';
+        return _locationSummary(trigger.locationLabel, trigger.radius);
       case 2:
         return 'App: ${appLabelFor(trigger.packageName)}';
       case 3:
@@ -74,10 +78,13 @@ class RuleTriggerSummaryFormatter {
       case 0:
         final start = rule.startTime ?? '--';
         final end = rule.endTime ?? '--';
-        return 'Time: $start - $end';
+        final repeat = repeatLabel(
+          rule.timeRepeatMode,
+          daysMask: rule.timeRepeatDaysMask,
+        );
+        return 'Time: $start-$end, $repeat';
       case 1:
-        final radius = rule.radius?.toDouble();
-        return 'Location${_formatRadius(radius)}';
+        return _locationSummary(rule.locationLabel, rule.radius?.toDouble());
       case 2:
         return 'App: ${appLabelFor(rule.packageName)}';
       case 3:
@@ -98,11 +105,22 @@ class RuleTriggerSummaryFormatter {
     return includeAllDay ? '$base, including all-day' : base;
   }
 
-  static String _formatRadius(double? radius) {
-    if (radius == null) return '';
+  static String _locationSummary(String? locationLabel, double? radius) {
+    final cleanedLabel = locationLabel?.trim();
+    final radiusText = _formatRadius(radius);
+    if (cleanedLabel != null && cleanedLabel.isNotEmpty) {
+      if (radiusText == null) return 'Location: $cleanedLabel';
+      return 'Location: $cleanedLabel, $radiusText';
+    }
+    if (radiusText == null) return 'Location';
+    return 'Location, $radiusText';
+  }
+
+  static String? _formatRadius(double? radius) {
+    if (radius == null) return null;
     final value = radius == radius.roundToDouble()
         ? radius.toInt().toString()
         : radius.toStringAsFixed(1);
-    return ' (${value}m)';
+    return '${value}m';
   }
 }

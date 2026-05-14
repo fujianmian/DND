@@ -13,6 +13,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.location.Location
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -20,10 +21,13 @@ import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import java.util.Calendar
 import java.util.Timer
 import java.util.TimerTask
@@ -32,6 +36,8 @@ import com.google.android.gms.location.ActivityRecognitionClient
 import com.google.android.gms.location.DetectedActivity
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 const val MATCH_TYPE_ANY = 0
 const val MATCH_TYPE_ALL = 1
@@ -41,6 +47,13 @@ const val TRIGGER_TYPE_APP = 2
 const val TRIGGER_TYPE_ACTIVITY = 3
 const val TRIGGER_TYPE_CALENDAR = 4
 const val DEFAULT_RULE_PRIORITY = 50
+const val REPEAT_EVERY_DAY = 0
+const val REPEAT_WEEKDAYS = 1
+const val REPEAT_WEEKENDS = 2
+const val REPEAT_CUSTOM = 3
+const val MASK_EVERY_DAY = 127
+const val MASK_WEEKDAYS = 31
+const val MASK_WEEKENDS = 96
 
 data class DndRule(
     val id: String,
@@ -49,6 +62,8 @@ data class DndRule(
     val startMinute: Int,
     val endHour: Int,
     val endMinute: Int,
+    val timeRepeatMode: Int,
+    val timeRepeatDaysMask: Int,
     val allowStarredContacts: Boolean,
     val allowRepeatCallers: Boolean
 )
@@ -98,6 +113,8 @@ data class AutomationTrigger(
     val startMinute: Int?,
     val endHour: Int?,
     val endMinute: Int?,
+    val timeRepeatMode: Int,
+    val timeRepeatDaysMask: Int,
     val latitude: Double?,
     val longitude: Double?,
     val radius: Int?,
@@ -118,9 +135,14 @@ class DndForegroundService : Service() {
 
     private val CHANNEL_ID = "DndServiceChannel"
     private val DND_DISABLE_GRACE_MS = 3000L
+    private val APP_FOREGROUND_HOLD_MS = 90 * 1000L
+    private val LOCATION_REFRESH_INTERVAL_MS = 15 * 1000L
+    private val LOCATION_EXIT_BUFFER_MIN_METERS = 25f
+    private val LOCATION_ENTER_BUFFER_MAX_METERS = 50f
     private val activeNotificationTitle = "DND Automation Active"
     private val inactiveNotificationTitle = "Quietly is monitoring"
     private val inactiveNotificationText = "No automation rule is active"
+    private val pausedNotificationTitle = "Quietly automation paused"
     private var timer: Timer? = null
     private val disableGraceHandler = Handler(Looper.getMainLooper())
     private var pendingDisableRunnable: Runnable? = null
@@ -133,7 +155,13 @@ class DndForegroundService : Service() {
     private var notificationMonitoringText: String = inactiveNotificationText
     private var targetAppPackages: Array<String> = emptyArray() // Track App Triggers
     private var targetActivityTypes: Array<String> = emptyArray() // Track Activity Triggers
+    private var lastConfirmedForegroundPackage: String? = null
+    private var lastConfirmedForegroundAtMillis: Long = 0L
+    private var lastMatchedAppPackage: String? = null
+    private var lastMatchedAppAtMillis: Long = 0L
+    private var lastLocationRefreshRequestedAtMillis: Long = 0L
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
     
     private lateinit var geofencingClient: GeofencingClient
 
@@ -153,6 +181,7 @@ class DndForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         geofencingClient = LocationServices.getGeofencingClient(this)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         activityRecognitionClient = ActivityRecognition.getClient(this)
 
         // Listen for internal broadcasts from the GeofenceBroadcastReceiver
@@ -170,6 +199,10 @@ class DndForegroundService : Service() {
 
     private fun boolAt(values: BooleanArray, index: Int): Boolean {
         return values.getOrNull(index) ?: false
+    }
+
+    private fun intAt(values: IntArray, index: Int, fallback: Int): Int {
+        return values.getOrNull(index) ?: fallback
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -190,6 +223,8 @@ class DndForegroundService : Service() {
         val startMinutes = ruleIntent?.getIntArrayExtra("startMinutes") ?: intArrayOf()
         val endHours = ruleIntent?.getIntArrayExtra("endHours") ?: intArrayOf()
         val endMinutes = ruleIntent?.getIntArrayExtra("endMinutes") ?: intArrayOf()
+        val timeRepeatModes = ruleIntent?.getIntArrayExtra("timeRepeatModes") ?: intArrayOf()
+        val timeRepeatDaysMasks = ruleIntent?.getIntArrayExtra("timeRepeatDaysMasks") ?: intArrayOf()
         val timeRuleIds = ruleIntent?.getStringArrayExtra("timeRuleIds") ?: emptyArray()
         val timeRuleNames = ruleIntent?.getStringArrayExtra("timeRuleNames") ?: emptyArray()
         val timeAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("timeAllowStarredContacts") ?: booleanArrayOf()
@@ -205,6 +240,8 @@ class DndForegroundService : Service() {
                     startMinutes[i],
                     endHours[i],
                     endMinutes[i],
+                    intAt(timeRepeatModes, i, REPEAT_EVERY_DAY),
+                    intAt(timeRepeatDaysMasks, i, MASK_EVERY_DAY),
                     boolAt(timeAllowStarredContacts, i),
                     boolAt(timeAllowRepeatCallers, i)
                 )
@@ -347,7 +384,7 @@ class DndForegroundService : Service() {
         activeRules.forEach {
             android.util.Log.d(
                 "DndExceptions",
-                "Time rule received: id=${it.id}, name=${it.name}, starred=${it.allowStarredContacts}, repeat=${it.allowRepeatCallers}"
+                "Time rule received: id=${it.id}, name=${it.name}, timeRepeatMode=${it.timeRepeatMode}, timeRepeatMask=${it.timeRepeatDaysMask}, starred=${it.allowStarredContacts}, repeat=${it.allowRepeatCallers}"
             )
         }
         activeLocationRules.forEach {
@@ -543,6 +580,20 @@ class DndForegroundService : Service() {
             )
             return null
         }
+        val rawRepeatMode = triggerJson.optInt("timeRepeatMode", REPEAT_EVERY_DAY)
+        val timeRepeatMode = normalizeTimeRepeatMode(rawRepeatMode)
+        val rawRepeatMask = if (triggerJson.has("timeRepeatDaysMask") && !triggerJson.isNull("timeRepeatDaysMask")) {
+            triggerJson.optInt("timeRepeatDaysMask")
+        } else {
+            maskForRepeatMode(timeRepeatMode)
+        }
+        val timeRepeatDaysMask = normalizedMaskForRepeatMode(timeRepeatMode, rawRepeatMask)
+        if (triggerType == TRIGGER_TYPE_TIME && timeRepeatMode == REPEAT_CUSTOM && timeRepeatDaysMask == 0) {
+            android.util.Log.w(
+                "DndGroupedRules",
+                "Grouped time trigger has custom repeat with no selected days: triggerId=$triggerId, ruleId=$ruleId."
+            )
+        }
 
         return AutomationTrigger(
             id = triggerId,
@@ -552,6 +603,8 @@ class DndForegroundService : Service() {
             startMinute = optionalInt(triggerJson, "startMinute"),
             endHour = optionalInt(triggerJson, "endHour"),
             endMinute = optionalInt(triggerJson, "endMinute"),
+            timeRepeatMode = timeRepeatMode,
+            timeRepeatDaysMask = timeRepeatDaysMask,
             latitude = optionalDouble(triggerJson, "latitude"),
             longitude = optionalDouble(triggerJson, "longitude"),
             radius = optionalInt(triggerJson, "radius"),
@@ -570,6 +623,7 @@ class DndForegroundService : Service() {
             val windowsJson = JSONArray(calendarBusyWindowsJson)
             val windows = mutableListOf<CalendarBusyWindow>()
             var skippedWindows = 0
+            var allDayWindowCount = 0
 
             for (index in 0 until windowsJson.length()) {
                 val windowJson = windowsJson.optJSONObject(index)
@@ -600,11 +654,18 @@ class DndForegroundService : Service() {
                         fetchedAt = windowJson.optLong("fetchedAt", 0L)
                     )
                 )
+                if (windowJson.optBoolean("isAllDay", false)) {
+                    allDayWindowCount += 1
+                    android.util.Log.d(
+                        "DndCalendar",
+                        "Parsed all-day calendar window: triggerId=$triggerId, startMillis=$startMillis, endMillis=$endMillis"
+                    )
+                }
             }
 
             android.util.Log.d(
                 "DndCalendar",
-                "calendarBusyWindowsJson parsed: windows=${windows.size}, skipped=$skippedWindows"
+                "calendarBusyWindowsJson parsed: windows=${windows.size}, allDayWindows=$allDayWindowCount, skipped=$skippedWindows"
             )
             windows
         } catch (e: Exception) {
@@ -659,6 +720,49 @@ class DndForegroundService : Service() {
         } else {
             null
         }
+    }
+
+    private fun normalizeTimeRepeatMode(mode: Int): Int {
+        return when (mode) {
+            REPEAT_EVERY_DAY, REPEAT_WEEKDAYS, REPEAT_WEEKENDS, REPEAT_CUSTOM -> mode
+            else -> REPEAT_EVERY_DAY
+        }
+    }
+
+    private fun maskForRepeatMode(mode: Int): Int {
+        return when (normalizeTimeRepeatMode(mode)) {
+            REPEAT_WEEKDAYS -> MASK_WEEKDAYS
+            REPEAT_WEEKENDS -> MASK_WEEKENDS
+            REPEAT_CUSTOM -> 0
+            else -> MASK_EVERY_DAY
+        }
+    }
+
+    private fun normalizedMaskForRepeatMode(mode: Int, mask: Int): Int {
+        return when (normalizeTimeRepeatMode(mode)) {
+            REPEAT_WEEKDAYS -> MASK_WEEKDAYS
+            REPEAT_WEEKENDS -> MASK_WEEKENDS
+            REPEAT_CUSTOM -> mask and MASK_EVERY_DAY
+            else -> MASK_EVERY_DAY
+        }
+    }
+
+    private fun dayBitForCalendarDay(calendarDay: Int): Int {
+        return when (calendarDay) {
+            Calendar.MONDAY -> 1 shl 0
+            Calendar.TUESDAY -> 1 shl 1
+            Calendar.WEDNESDAY -> 1 shl 2
+            Calendar.THURSDAY -> 1 shl 3
+            Calendar.FRIDAY -> 1 shl 4
+            Calendar.SATURDAY -> 1 shl 5
+            Calendar.SUNDAY -> 1 shl 6
+            else -> 0
+        }
+    }
+
+    private fun repeatMatchesDay(mode: Int, mask: Int, dayBit: Int): Boolean {
+        val repeatMask = normalizedMaskForRepeatMode(mode, mask)
+        return dayBit != 0 && (repeatMask and dayBit) != 0
     }
 
     private fun groupedLocationRulesForFlatEvaluator(): List<DndLocationRule> {
@@ -763,6 +867,7 @@ class DndForegroundService : Service() {
         }
 
         val geofenceList = mutableListOf<Geofence>()
+        val registeredGeofenceIds = mutableSetOf<String>()
         for (i in ids.indices) {
             val latitude = lats.getOrNull(i)
             val longitude = lngs.getOrNull(i)
@@ -779,6 +884,7 @@ class DndForegroundService : Service() {
                 "DndGeofence",
                 "Preparing geofence: id=${ids[i]}, name=$ruleName, radius=${radius}m"
             )
+            registeredGeofenceIds.add(ids[i])
             geofenceList.add(
                 Geofence.Builder()
                     .setRequestId(ids[i])
@@ -802,7 +908,14 @@ class DndForegroundService : Service() {
         val registerGeofences: () -> Unit = {
             geofencingClient.addGeofences(geofencingRequest, pendingIntent).run {
                 addOnSuccessListener {
-                    clearActiveGeofenceState("registration-success")
+                    pruneActiveGeofenceStateToRegisteredIds(
+                        registeredGeofenceIds,
+                        "registration-success"
+                    )
+                    refreshActiveGeofenceStateFromCurrentLocation(
+                        "registration-success",
+                        force = true
+                    )
                     android.util.Log.d(
                         "DndGeofence",
                         "Geofence registration succeeded: requested=$requestedCount, registered=${geofenceList.size}, initialTriggerEnter=true"
@@ -863,6 +976,26 @@ class DndForegroundService : Service() {
         android.util.Log.d("DndGeofence", "Active geofence state cleared: reason=$reason")
     }
 
+    private fun pruneActiveGeofenceStateToRegisteredIds(
+        registeredIds: Set<String>,
+        reason: String
+    ) {
+        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
+        val activeIds = prefs.getStringSet("activeGeofenceIds", emptySet<String>()) ?: emptySet()
+        val prunedIds = activeIds.intersect(registeredIds)
+
+        prefs.edit()
+            .putBoolean("isInsideGeofence", prunedIds.isNotEmpty())
+            .putStringSet("activeGeofenceIds", prunedIds)
+            .apply()
+
+        isInsideGeofence = prunedIds.isNotEmpty()
+        android.util.Log.d(
+            "DndGeofence",
+            "Active geofence state pruned: reason=$reason, before=${activeIds.joinToString()}, registered=${registeredIds.joinToString()}, after=${prunedIds.joinToString()}"
+        )
+    }
+
     private fun geofenceExceptionDetails(exception: Exception): String {
         val statusCode = (exception as? ApiException)?.statusCode
         val statusText = statusCode?.let { ", statusCode=$it" } ?: ""
@@ -875,6 +1008,115 @@ class DndForegroundService : Service() {
             this, 0, intent, 
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
+    }
+
+    private fun refreshActiveGeofenceStateFromCurrentLocation(
+        source: String,
+        force: Boolean = false
+    ) {
+        if (activeLocationRules.isEmpty()) return
+
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.w(
+                "DndGeofence",
+                "Location refresh skipped: ACCESS_FINE_LOCATION is missing. source=$source"
+            )
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (!force && now - lastLocationRefreshRequestedAtMillis < LOCATION_REFRESH_INTERVAL_MS) {
+            return
+        }
+        lastLocationRefreshRequestedAtMillis = now
+
+        android.util.Log.d(
+            "DndGeofence",
+            "Location refresh requested: source=$source, force=$force, locationRuleCount=${activeLocationRules.size}"
+        )
+
+        val cancellationToken = CancellationTokenSource()
+        fusedLocationClient
+            .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken.token)
+            .addOnSuccessListener { location ->
+                if (location == null) {
+                    android.util.Log.w(
+                        "DndGeofence",
+                        "Location refresh returned null: source=$source"
+                    )
+                    return@addOnSuccessListener
+                }
+
+                updateActiveGeofenceStateFromLocation(location, source)
+                checkAndToggleDnd("location-refresh:$source", allowDisableGrace = false)
+            }
+            .addOnFailureListener { exception ->
+                android.util.Log.w(
+                    "DndGeofence",
+                    "Location refresh failed: source=$source, exception=${exception::class.java.simpleName}, message=${exception.message}"
+                )
+            }
+    }
+
+    private fun updateActiveGeofenceStateFromLocation(location: Location, source: String) {
+        val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
+        val previousIds = prefs.getStringSet("activeGeofenceIds", emptySet<String>()) ?: emptySet()
+        val nextIds = mutableSetOf<String>()
+        val accuracyMeters = if (location.hasAccuracy()) location.accuracy.coerceAtLeast(0f) else 0f
+        val enterBufferMeters = accuracyMeters.coerceAtMost(LOCATION_ENTER_BUFFER_MAX_METERS)
+        val exitBufferMeters = accuracyMeters.coerceAtLeast(LOCATION_EXIT_BUFFER_MIN_METERS)
+
+        activeLocationRules.forEach { rule ->
+            val distanceMeters = distanceMeters(
+                location.latitude,
+                location.longitude,
+                rule.latitude,
+                rule.longitude
+            )
+            val wasActive = previousIds.contains(rule.id)
+            val isActive = if (wasActive) {
+                distanceMeters <= rule.radius + exitBufferMeters
+            } else {
+                distanceMeters <= rule.radius + enterBufferMeters
+            }
+
+            android.util.Log.d(
+                "DndGeofence",
+                "Location rule distance evaluated: source=$source, id=${rule.id}, name=${rule.name}, distance=${"%.1f".format(distanceMeters)}m, radius=${rule.radius}m, accuracy=${"%.1f".format(accuracyMeters)}m, wasActive=$wasActive, active=$isActive"
+            )
+
+            if (isActive) {
+                nextIds.add(rule.id)
+            }
+        }
+
+        prefs.edit()
+            .putBoolean("isInsideGeofence", nextIds.isNotEmpty())
+            .putStringSet("activeGeofenceIds", nextIds)
+            .apply()
+
+        isInsideGeofence = nextIds.isNotEmpty()
+        android.util.Log.d(
+            "DndGeofence",
+            "Active geofence state refreshed from location: source=$source, before=${previousIds.joinToString()}, after=${nextIds.joinToString()}, lat=${location.latitude}, lng=${location.longitude}, accuracy=${"%.1f".format(accuracyMeters)}m"
+        )
+    }
+
+    private fun distanceMeters(
+        startLatitude: Double,
+        startLongitude: Double,
+        endLatitude: Double,
+        endLongitude: Double
+    ): Float {
+        val result = FloatArray(1)
+        Location.distanceBetween(
+            startLatitude,
+            startLongitude,
+            endLatitude,
+            endLongitude,
+            result
+        )
+        return result[0]
     }
 
     private fun startAutomationLoop() {
@@ -895,7 +1137,8 @@ class DndForegroundService : Service() {
 
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 1000 * 60 * 1 // Look at events from the last 1 minute
+        val startTime = endTime - 1000 * 60 * 10 // Covers apps that stay open quietly without new resume events.
+        val appTargets = appTriggerTargetPackages()
 
         val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
         var currentForegroundApp: String? = null
@@ -913,11 +1156,109 @@ class DndForegroundService : Service() {
             }
         }
 
+        if (!currentForegroundApp.isNullOrBlank()) {
+            lastConfirmedForegroundPackage = currentForegroundApp
+            lastConfirmedForegroundAtMillis = currentForegroundEventTime
+        }
+
+        val directMatch = currentForegroundApp != null && appTargets.contains(currentForegroundApp)
+        if (directMatch) {
+            rememberMatchedApp(currentForegroundApp, currentForegroundEventTime)
+        }
+
+        val heldPackage = heldAppForegroundPackage(
+            now = endTime,
+            currentForegroundPackage = currentForegroundApp,
+            appTargets = appTargets
+        )
+        val resolvedForegroundPackage = heldPackage ?: currentForegroundApp
+        val lastConfirmedAgeMs = if (lastConfirmedForegroundAtMillis > 0L) {
+            endTime - lastConfirmedForegroundAtMillis
+        } else {
+            -1L
+        }
+        val lastMatchedAgeMs = if (lastMatchedAppAtMillis > 0L) {
+            endTime - lastMatchedAppAtMillis
+        } else {
+            -1L
+        }
+
         android.util.Log.d(
             "DndActivity",
-            "Current foreground package=$currentForegroundApp, eventTime=$currentForegroundEventTime, targetAppPackages=${targetAppPackages.joinToString()}, groupedRules=${groupedAutomationRules.size}"
+            "App foreground source=usage-events, rawForeground=$currentForegroundApp, rawEventTime=$currentForegroundEventTime, resolvedForeground=$resolvedForegroundPackage, heldPackage=$heldPackage, lastConfirmedForeground=$lastConfirmedForegroundPackage, lastConfirmedAgeMs=$lastConfirmedAgeMs, lastMatchedApp=$lastMatchedAppPackage, lastMatchedAgeMs=$lastMatchedAgeMs, holdMs=$APP_FOREGROUND_HOLD_MS, targetAppPackages=${appTargets.joinToString()}, groupedRules=${groupedAutomationRules.size}"
         )
-        return currentForegroundApp
+        return resolvedForegroundPackage
+    }
+
+    private fun appTriggerTargetPackages(): Set<String> {
+        val groupedTargets = groupedAutomationRules
+            .flatMap { rule -> rule.triggers }
+            .filter { trigger -> trigger.enabled && trigger.triggerType == TRIGGER_TYPE_APP }
+            .mapNotNull { trigger -> trigger.packageName }
+        return (targetAppPackages.toList() + groupedTargets)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+    }
+
+    private fun rememberMatchedApp(packageName: String, matchedAtMillis: Long) {
+        lastMatchedAppPackage = packageName
+        lastMatchedAppAtMillis = if (matchedAtMillis > 0L) {
+            matchedAtMillis
+        } else {
+            System.currentTimeMillis()
+        }
+    }
+
+    private fun heldAppForegroundPackage(
+        now: Long,
+        currentForegroundPackage: String?,
+        appTargets: Set<String>
+    ): String? {
+        val lastMatched = lastMatchedAppPackage ?: return null
+        if (!appTargets.contains(lastMatched)) return null
+
+        val matchedAgeMs = now - lastMatchedAppAtMillis
+        if (lastMatchedAppAtMillis <= 0L || matchedAgeMs > APP_FOREGROUND_HOLD_MS) {
+            android.util.Log.d(
+                "DndActivity",
+                "App foreground hold expired: lastMatchedApp=$lastMatched, matchedAgeMs=$matchedAgeMs, holdMs=$APP_FOREGROUND_HOLD_MS, currentForegroundPackage=$currentForegroundPackage"
+            )
+            return null
+        }
+
+        if (currentForegroundPackage.isNullOrBlank()) {
+            android.util.Log.d(
+                "DndActivity",
+                "App foreground hold used: reason=no recent usage event, heldPackage=$lastMatched, matchedAgeMs=$matchedAgeMs"
+            )
+            return lastMatched
+        }
+
+        if (isTransientForegroundPackage(currentForegroundPackage)) {
+            android.util.Log.d(
+                "DndActivity",
+                "App foreground hold used: reason=transient foreground package, rawForeground=$currentForegroundPackage, heldPackage=$lastMatched, matchedAgeMs=$matchedAgeMs"
+            )
+            return lastMatched
+        }
+
+        if (currentForegroundPackage != lastMatched) {
+            android.util.Log.d(
+                "DndActivity",
+                "App foreground hold not used: different real foreground package=$currentForegroundPackage, lastMatchedApp=$lastMatched"
+            )
+        }
+        return null
+    }
+
+    private fun isTransientForegroundPackage(packageName: String): Boolean {
+        return packageName == this.packageName ||
+            packageName == "android" ||
+            packageName == "com.android.systemui" ||
+            packageName == "com.google.android.permissioncontroller" ||
+            packageName == "com.android.permissioncontroller" ||
+            packageName.contains("launcher", ignoreCase = true)
     }
 
     private fun timeWindowMatches(
@@ -925,18 +1266,62 @@ class DndForegroundService : Service() {
         startHour: Int,
         startMinute: Int,
         endHour: Int,
-        endMinute: Int
+        endMinute: Int,
+        timeRepeatMode: Int = REPEAT_EVERY_DAY,
+        timeRepeatDaysMask: Int = MASK_EVERY_DAY,
+        currentTimeMillis: Long = System.currentTimeMillis(),
+        triggerId: String = "flat"
     ): Boolean {
         val startTotal = (startHour * 60) + startMinute
         val endTotal = (endHour * 60) + endMinute
+        val repeatMode = normalizeTimeRepeatMode(timeRepeatMode)
+        val repeatMask = normalizedMaskForRepeatMode(repeatMode, timeRepeatDaysMask)
 
-        return if (startTotal < endTotal) {
-            currentTotal in startTotal until endTotal
-        } else if (startTotal > endTotal) {
-            currentTotal >= startTotal || currentTotal < endTotal
-        } else {
-            false
+        if (startTotal == endTotal) {
+            android.util.Log.d(
+                "DndTime",
+                "Time trigger evaluated: triggerId=$triggerId, start=${"%02d:%02d".format(startHour, startMinute)}, end=${"%02d:%02d".format(endHour, endMinute)}, repeatMode=$repeatMode, repeatMask=$repeatMask, dayBit=0, currentTotal=$currentTotal, matched=false"
+            )
+            return false
         }
+
+        if (repeatMode == REPEAT_CUSTOM && repeatMask == 0) {
+            android.util.Log.w(
+                "DndTime",
+                "Time trigger inactive because custom repeat has no selected days: triggerId=$triggerId"
+            )
+            return false
+        }
+
+        val calendar = Calendar.getInstance().apply { timeInMillis = currentTimeMillis }
+        val currentDayBit = dayBitForCalendarDay(calendar.get(Calendar.DAY_OF_WEEK))
+        calendar.add(Calendar.DAY_OF_YEAR, -1)
+        val previousDayBit = dayBitForCalendarDay(calendar.get(Calendar.DAY_OF_WEEK))
+
+        val matched: Boolean
+        val dayBitUsed: Int
+        if (startTotal < endTotal) {
+            dayBitUsed = currentDayBit
+            matched = currentTotal in startTotal until endTotal &&
+                repeatMatchesDay(repeatMode, repeatMask, dayBitUsed)
+        } else {
+            if (currentTotal >= startTotal) {
+                dayBitUsed = currentDayBit
+                matched = repeatMatchesDay(repeatMode, repeatMask, dayBitUsed)
+            } else if (currentTotal < endTotal) {
+                dayBitUsed = previousDayBit
+                matched = repeatMatchesDay(repeatMode, repeatMask, dayBitUsed)
+            } else {
+                dayBitUsed = currentDayBit
+                matched = false
+            }
+        }
+
+        android.util.Log.d(
+            "DndTime",
+            "Time trigger evaluated: triggerId=$triggerId, start=${"%02d:%02d".format(startHour, startMinute)}, end=${"%02d:%02d".format(endHour, endMinute)}, repeatMode=$repeatMode, repeatMask=$repeatMask, dayBit=$dayBitUsed, currentTotal=$currentTotal, matched=$matched"
+        )
+        return matched
     }
 
     private fun activityMatches(ruleActivityType: String, currentActivityInt: Int): Boolean {
@@ -1004,14 +1389,15 @@ class DndForegroundService : Service() {
         timeMatched: Boolean,
         locationMatched: Boolean,
         appMatched: Boolean,
-        activityMatched: Boolean
+        activityMatched: Boolean,
+        calendarMatched: Boolean
     ) {
         val runnable = pendingDisableRunnable ?: return
         disableGraceHandler.removeCallbacks(runnable)
         pendingDisableRunnable = null
         android.util.Log.d(
             "DndActivity",
-            "DND disable cancelled: rule matched again. source=$source, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched"
+            "DND disable cancelled: rule matched again. source=$source, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched"
         )
     }
 
@@ -1021,6 +1407,7 @@ class DndForegroundService : Service() {
         locationMatched: Boolean,
         appMatched: Boolean,
         activityMatched: Boolean,
+        calendarMatched: Boolean,
         currentForegroundPackage: String?,
         isCurrentlyInsideGeofence: Boolean,
         activeGeofenceIds: Set<String>,
@@ -1029,7 +1416,7 @@ class DndForegroundService : Service() {
         if (pendingDisableRunnable != null) {
             android.util.Log.d(
                 "DndActivity",
-                "DND disable already pending: source=$source, graceMs=$DND_DISABLE_GRACE_MS, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched"
+                "DND disable already pending: source=$source, graceMs=$DND_DISABLE_GRACE_MS, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched"
             )
             return
         }
@@ -1041,7 +1428,7 @@ class DndForegroundService : Service() {
         pendingDisableRunnable = runnable
         android.util.Log.d(
             "DndActivity",
-            "DND disable delayed: no matching rules, waiting grace period. source=$source, graceMs=$DND_DISABLE_GRACE_MS, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, currentActivityInt=$currentActivityInt"
+            "DND disable delayed: no matching rules, waiting grace period. source=$source, graceMs=$DND_DISABLE_GRACE_MS, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, currentActivityInt=$currentActivityInt"
         )
         disableGraceHandler.postDelayed(runnable, DND_DISABLE_GRACE_MS)
     }
@@ -1051,6 +1438,25 @@ class DndForegroundService : Service() {
         allowDisableGrace: Boolean = true
     ) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val expiredPauseCleared = AutomationPauseStateStore.clearIfExpired(this)
+        if (expiredPauseCleared) {
+            android.util.Log.d(
+                "DndAutomationPause",
+                "Expired automation pause cleared; continuing normal evaluation. source=$source"
+            )
+        }
+        val pauseState = AutomationPauseStateStore.read(this)
+        if (pauseState.automationPaused) {
+            pendingDisableRunnable?.let { disableGraceHandler.removeCallbacks(it) }
+            pendingDisableRunnable = null
+            android.util.Log.d(
+                "DndAutomationPause",
+                "Automation pause active; skipping rule evaluation. source=$source, pauseUntilMillis=${pauseState.pauseUntilMillis}, pausedAtMillis=${pauseState.pausedAtMillis}, reason=${pauseState.pauseReason}"
+            )
+            applyAutomationPausedState(notificationManager, source, pauseState)
+            return
+        }
+
         if (!notificationManager.isNotificationPolicyAccessGranted) {
             android.util.Log.e("DndExceptions", "DND policy access missing; skipping DND evaluation. source=$source")
             pendingDisableRunnable?.let { disableGraceHandler.removeCallbacks(it) }
@@ -1074,11 +1480,54 @@ class DndForegroundService : Service() {
         }
     }
 
+    private fun applyAutomationPausedState(
+        notificationManager: NotificationManager,
+        source: String,
+        pauseState: AutomationPauseState
+    ) {
+        val automationState = AutomationDndStateStore.read(this)
+        val filterBefore = notificationManager.currentInterruptionFilter
+        var automationDndTurnedOff = false
+
+        if (automationState.automationDndActive) {
+            if (notificationManager.isNotificationPolicyAccessGranted) {
+                notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                automationDndTurnedOff = true
+            } else {
+                android.util.Log.e(
+                    "DndAutomationPause",
+                    "Cannot exit automation DND during pause because DND policy access is missing. source=$source"
+                )
+            }
+            AutomationDndStateStore.write(this, false, "")
+        }
+
+        val filterAfter = notificationManager.currentInterruptionFilter
+        updateForegroundNotification(
+            pausedNotificationTitle,
+            pausedNotificationText(pauseState)
+        )
+        android.util.Log.d(
+            "DndAutomationPause",
+            "Paused state applied: source=$source, automationWasActive=${automationState.automationDndActive}, automationDndTurnedOff=$automationDndTurnedOff, pauseUntilMillis=${pauseState.pauseUntilMillis}, filterBefore=$filterBefore, filterAfter=$filterAfter"
+        )
+    }
+
+    private fun pausedNotificationText(pauseState: AutomationPauseState): String {
+        val pauseUntilMillis = pauseState.pauseUntilMillis
+        if (pauseUntilMillis <= 0L) return "Paused until resumed"
+
+        val timeText = SimpleDateFormat("HH:mm", Locale.getDefault())
+            .format(java.util.Date(pauseUntilMillis))
+        return "Paused until $timeText"
+    }
+
     private fun checkAndToggleDndGrouped(
         notificationManager: NotificationManager,
         source: String,
         allowDisableGrace: Boolean
     ) {
+        refreshActiveGeofenceStateFromCurrentLocation(source)
         val prefs = getSharedPreferences("DndPrefs", Context.MODE_PRIVATE)
         val isCurrentlyInsideGeofence = prefs.getBoolean("isInsideGeofence", false)
         val activeGeofenceIds = prefs.getStringSet("activeGeofenceIds", emptySet<String>()) ?: emptySet()
@@ -1200,6 +1649,7 @@ class DndForegroundService : Service() {
             locationMatched,
             appMatched,
             activityMatched,
+            calendarMatched,
             currentForegroundPackage,
             isCurrentlyInsideGeofence,
             activeGeofenceIds,
@@ -1245,13 +1695,41 @@ class DndForegroundService : Service() {
                     )
                     false
                 } else {
-                    timeWindowMatches(currentTotal, startHour, startMinute, endHour, endMinute)
+                    timeWindowMatches(
+                        currentTotal,
+                        startHour,
+                        startMinute,
+                        endHour,
+                        endMinute,
+                        trigger.timeRepeatMode,
+                        trigger.timeRepeatDaysMask,
+                        currentTimeMillis,
+                        trigger.id
+                    )
                 }
             }
-            TRIGGER_TYPE_LOCATION -> activeGeofenceIds.contains(trigger.id)
+            TRIGGER_TYPE_LOCATION -> {
+                val matched = activeGeofenceIds.contains(trigger.id)
+                android.util.Log.d(
+                    "DndGeofence",
+                    "Grouped location trigger evaluated: triggerId=${trigger.id}, matched=$matched, activeGeofenceIds=${activeGeofenceIds.joinToString()}"
+                )
+                matched
+            }
             TRIGGER_TYPE_APP -> {
                 val packageName = trigger.packageName
-                packageName != null && packageName == currentForegroundPackage
+                val matched = packageName != null && packageName == currentForegroundPackage
+                val reason = when {
+                    packageName == null -> "missing trigger package"
+                    currentForegroundPackage == null -> "no resolved foreground package"
+                    matched -> "package matched"
+                    else -> "foreground package differs"
+                }
+                android.util.Log.d(
+                    "DndActivity",
+                    "Grouped app trigger evaluated: triggerId=${trigger.id}, targetPackage=$packageName, currentForegroundPackage=$currentForegroundPackage, matched=$matched, reason=$reason, lastMatchedApp=$lastMatchedAppPackage, lastMatchedAt=$lastMatchedAppAtMillis"
+                )
+                matched
             }
             TRIGGER_TYPE_ACTIVITY -> {
                 val activityType = trigger.activityType
@@ -1269,12 +1747,16 @@ class DndForegroundService : Service() {
     }
 
     private fun calendarTriggerMatches(triggerId: String, currentTimeMillis: Long): Boolean {
-        val matchingWindows = calendarBusyWindows.filter { window ->
+        val windowsForTrigger = calendarBusyWindows.filter { window ->
+            window.triggerId == triggerId
+        }
+        val matchingWindows = windowsForTrigger.filter { window ->
             window.triggerId == triggerId &&
                 currentTimeMillis >= window.startMillis &&
                 currentTimeMillis < window.endMillis
         }
         val matched = matchingWindows.isNotEmpty()
+        val allDayMatchingWindowExists = matchingWindows.any { it.isAllDay }
         val newestFetchedAt = matchingWindows.maxOfOrNull { it.fetchedAt } ?: 0L
         val fetchedAgeMinutes = if (newestFetchedAt > 0L) {
             (currentTimeMillis - newestFetchedAt).coerceAtLeast(0L) / 60000L
@@ -1283,7 +1765,7 @@ class DndForegroundService : Service() {
         }
         android.util.Log.d(
             "DndCalendar",
-            "Calendar trigger evaluated: triggerId=$triggerId, matched=$matched, matchingWindowCount=${matchingWindows.size}, fetchedAgeMinutes=$fetchedAgeMinutes"
+            "Calendar trigger evaluated: triggerId=$triggerId, windowsForTrigger=${windowsForTrigger.size}, currentTimeMillis=$currentTimeMillis, matched=$matched, matchingWindowCount=${matchingWindows.size}, allDayMatchingWindowExists=$allDayMatchingWindowExists, fetchedAgeMinutes=$fetchedAgeMinutes"
         )
         return matched
     }
@@ -1308,16 +1790,22 @@ class DndForegroundService : Service() {
         source: String,
         allowDisableGrace: Boolean
     ) {
+        refreshActiveGeofenceStateFromCurrentLocation(source)
         // 1. Time Check
         val calendar = Calendar.getInstance()
         val currentTotal = (calendar.get(Calendar.HOUR_OF_DAY) * 60) + calendar.get(Calendar.MINUTE)
+        val currentTimeMillis = calendar.timeInMillis
         val matchingTimeRules = activeRules.filter { rule ->
             timeWindowMatches(
                 currentTotal,
                 rule.startHour,
                 rule.startMinute,
                 rule.endHour,
-                rule.endMinute
+                rule.endMinute,
+                rule.timeRepeatMode,
+                rule.timeRepeatDaysMask,
+                currentTimeMillis,
+                rule.id
             )
         }
 
@@ -1334,6 +1822,18 @@ class DndForegroundService : Service() {
         // 3. App Check
         val currentForegroundPackage = currentForegroundAppPackage()
         val matchingAppRules = targetAppRules.filter { it.packageName == currentForegroundPackage }
+        targetAppRules.forEach { rule ->
+            val matched = rule.packageName == currentForegroundPackage
+            val reason = when {
+                currentForegroundPackage == null -> "no resolved foreground package"
+                matched -> "package matched"
+                else -> "foreground package differs"
+            }
+            android.util.Log.d(
+                "DndActivity",
+                "Flat app trigger evaluated: ruleId=${rule.id}, ruleName=${rule.name}, targetPackage=${rule.packageName}, currentForegroundPackage=$currentForegroundPackage, matched=$matched, reason=$reason, lastMatchedApp=$lastMatchedAppPackage, lastMatchedAt=$lastMatchedAppAtMillis"
+            )
+        }
 
         // 4. Activity Check with Logging
         val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
@@ -1384,6 +1884,7 @@ class DndForegroundService : Service() {
             locationMatched,
             appMatched,
             activityMatched,
+            false,
             currentForegroundPackage,
             isCurrentlyInsideGeofence,
             activeGeofenceIds,
@@ -1404,6 +1905,7 @@ class DndForegroundService : Service() {
         locationMatched: Boolean,
         appMatched: Boolean,
         activityMatched: Boolean,
+        calendarMatched: Boolean,
         currentForegroundPackage: String?,
         isCurrentlyInsideGeofence: Boolean,
         activeGeofenceIds: Set<String>,
@@ -1416,7 +1918,8 @@ class DndForegroundService : Service() {
                 timeMatched,
                 locationMatched,
                 appMatched,
-                activityMatched
+                activityMatched,
+                calendarMatched
             )
             val activeRuleNamesText = matchingRuleNames.joinToString()
 
@@ -1456,6 +1959,7 @@ class DndForegroundService : Service() {
                     locationMatched,
                     appMatched,
                     activityMatched,
+                    calendarMatched,
                     currentForegroundPackage,
                     isCurrentlyInsideGeofence,
                     activeGeofenceIds,
@@ -1467,7 +1971,7 @@ class DndForegroundService : Service() {
             if (currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
                 android.util.Log.d(
                     "DndActivity",
-                    "DND disabled after grace period: still no matching rules. source=$source, time=false, location=false, app=false, activity=false, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, targetAppPackages=${targetAppPackages.joinToString()}, currentActivityInt=$currentActivityInt"
+                    "DND disabled after grace period: still no matching rules. source=$source, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched, currentForegroundPackage=$currentForegroundPackage, lastMatchedApp=$lastMatchedAppPackage, lastMatchedAppAt=$lastMatchedAppAtMillis, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, targetAppPackages=${appTriggerTargetPackages().joinToString()}, currentActivityInt=$currentActivityInt"
                 )
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
             }

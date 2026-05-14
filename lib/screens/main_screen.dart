@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
+import 'profiles_screen.dart';
 import 'rule_list_screen.dart';
 import 'settings_screen.dart';
-import 'status_screen.dart';
 import '../theme/app_theme.dart';
 
 class MainScreen extends StatefulWidget {
@@ -20,7 +20,7 @@ class _MainScreenState extends State<MainScreen> {
   late final List<Widget> _screens = [
     HomeScreen(onOpenRules: () => _selectTab(_rulesTabIndex)),
     const RuleListScreen(),
-    const StatusScreen(),
+    const ProfilesScreen(),
     const SettingsScreen(),
   ];
 
@@ -52,9 +52,9 @@ class _MainScreenState extends State<MainScreen> {
               label: 'Rules',
             ),
             NavigationDestination(
-              icon: Icon(Icons.monitor_heart_outlined),
-              selectedIcon: Icon(Icons.monitor_heart_rounded),
-              label: 'Status',
+              icon: Icon(Icons.folder_outlined),
+              selectedIcon: Icon(Icons.folder_rounded),
+              label: 'Profiles',
             ),
             NavigationDestination(
               icon: Icon(Icons.settings_outlined),

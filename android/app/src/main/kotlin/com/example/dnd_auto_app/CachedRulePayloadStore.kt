@@ -33,6 +33,8 @@ object CachedRulePayloadStore {
         "startMinutes",
         "endHours",
         "endMinutes",
+        "timeRepeatModes",
+        "timeRepeatDaysMasks",
         "rads"
     )
 

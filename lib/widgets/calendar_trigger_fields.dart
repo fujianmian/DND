@@ -26,12 +26,6 @@ class CalendarTriggerFields extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusText = connected && email != null
-        ? 'Connected as $email'
-        : connected
-        ? 'Connected'
-        : 'Not connected';
-
     return Column(
       children: [
         ListTile(
@@ -40,8 +34,15 @@ class CalendarTriggerFields extends StatelessWidget {
             connected ? Icons.event_available : Icons.event_busy,
             color: connected ? AppTheme.logoBlue : AppTheme.logoPurple,
           ),
-          title: const Text('Google Calendar'),
-          subtitle: Text(statusText),
+          title: const Text(
+            'Google Calendar',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: _CalendarConnectionStatusText(
+            connected: connected,
+            email: email,
+          ),
           trailing: connected
               ? const Icon(Icons.check_circle, color: AppTheme.logoCyan)
               : TextButton(
@@ -96,6 +97,35 @@ class CalendarTriggerFields extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class _CalendarConnectionStatusText extends StatelessWidget {
+  const _CalendarConnectionStatusText({required this.connected, this.email});
+
+  final bool connected;
+  final String? email;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanEmail = email?.trim();
+    if (!connected) return const Text('Not connected');
+    if (cleanEmail == null || cleanEmail.isEmpty) {
+      return const Text('Connected');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Connected as'),
+        Text(
+          cleanEmail,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
         ),
       ],
     );

@@ -4,12 +4,15 @@ import '../database/database.dart';
 // Use a prefix to prevent the "Rule" name collision error
 import '../models/rule.dart' as model;
 import '../models/rule_trigger_draft.dart';
+import '../models/time_repeat.dart';
 import '../main.dart'; // Access global 'database'
 import '../services/app_catalog.dart';
 import '../services/calendar_auth_service.dart';
 import '../services/calendar_event_sync_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/calendar_trigger_fields.dart';
+import '../widgets/location_trigger_fields.dart';
+import '../widgets/time_repeat_fields.dart';
 import 'map_picker_screen.dart'; // Make sure this matches your map screen file name
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -17,8 +20,9 @@ import 'package:permission_handler/permission_handler.dart';
 class RuleFormScreen extends StatefulWidget {
   // Drift's generated Rule class from database.dart
   final Rule? rule;
+  final int? profileId;
 
-  const RuleFormScreen({super.key, this.rule});
+  const RuleFormScreen({super.key, this.rule, this.profileId});
 
   @override
   State<RuleFormScreen> createState() => _RuleFormScreenState();
@@ -35,11 +39,15 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   // Time state
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
+  int _timeRepeatMode = timeRepeatEveryDay;
+  int _timeRepeatDaysMask = timeRepeatEveryDayMask;
 
   // Location state
   double? _latitude;
   double? _longitude;
   int? _radius;
+  int? _savedLocationId;
+  String? _locationLabel;
 
   // App state
   String? _packageName;
@@ -165,12 +173,18 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (widget.rule?.endTime != null) {
       _endTime = _parseTimeString(widget.rule!.endTime!);
     }
+    if (widget.rule?.type == RuleTriggerDraft.time) {
+      _timeRepeatMode = widget.rule!.timeRepeatMode;
+      _timeRepeatDaysMask = widget.rule!.timeRepeatDaysMask;
+    }
 
     // 3. Load existing location data if editing a Location Rule
     if (widget.rule?.latitude != null && widget.rule?.longitude != null) {
       _latitude = widget.rule!.latitude;
       _longitude = widget.rule!.longitude;
       _radius = widget.rule!.radius;
+      _savedLocationId = widget.rule!.savedLocationId;
+      _locationLabel = widget.rule!.locationLabel;
     }
 
     // 4. Load existing app data if editing an App Rule
@@ -220,9 +234,13 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           _endTime = trigger.endTime == null
               ? null
               : _parseTimeString(trigger.endTime!);
+          _timeRepeatMode = trigger.timeRepeatMode;
+          _timeRepeatDaysMask = trigger.timeRepeatDaysMask;
           _latitude = null;
           _longitude = null;
           _radius = null;
+          _savedLocationId = null;
+          _locationLabel = null;
           _packageName = null;
           _activityType = null;
           _clearCalendarFields();
@@ -234,6 +252,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           _latitude = trigger.latitude;
           _longitude = trigger.longitude;
           _radius = trigger.radius?.round();
+          _savedLocationId = trigger.savedLocationId;
+          _locationLabel = trigger.locationLabel;
           _packageName = null;
           _activityType = null;
           _clearCalendarFields();
@@ -245,6 +265,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           _latitude = null;
           _longitude = null;
           _radius = null;
+          _savedLocationId = null;
+          _locationLabel = null;
           _packageName = trigger.packageName;
           _activityType = null;
           _clearCalendarFields();
@@ -256,6 +278,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           _latitude = null;
           _longitude = null;
           _radius = null;
+          _savedLocationId = null;
+          _locationLabel = null;
           _packageName = null;
           _activityType = trigger.activityType;
           _clearCalendarFields();
@@ -267,6 +291,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           _latitude = null;
           _longitude = null;
           _radius = null;
+          _savedLocationId = null;
+          _locationLabel = null;
           _packageName = null;
           _activityType = null;
           _calendarId = trigger.calendarId;
@@ -400,6 +426,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         type: draft.triggerType,
         isEnabled: const d.Value(true),
         priority: d.Value(selectedPriority),
+        profileId: d.Value<int?>(widget.profileId),
         allowStarredContacts: d.Value(_allowStarredContacts),
         allowRepeatCallers: d.Value(_allowRepeatCallers),
       );
@@ -413,6 +440,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         name: d.Value(name),
         isEnabled: d.Value(widget.rule!.isEnabled),
         priority: d.Value(selectedPriority),
+        profileId: d.Value<int?>(widget.rule!.profileId),
         allowStarredContacts: d.Value(_allowStarredContacts),
         allowRepeatCallers: d.Value(_allowRepeatCallers),
       );
@@ -435,9 +463,13 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       triggerType: _triggerTypeFor(_selectedType),
       startTime: _startTime?.format(context),
       endTime: _endTime?.format(context),
+      timeRepeatMode: _timeRepeatMode,
+      timeRepeatDaysMask: _timeRepeatDaysMask,
       latitude: _latitude,
       longitude: _longitude,
       radius: _radius?.toDouble(),
+      savedLocationId: _savedLocationId,
+      locationLabel: _locationLabel,
       packageName: _packageName,
       activityType: _activityType,
       calendarId: _calendarId,
@@ -469,10 +501,11 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   String? _triggerValidationError() {
     switch (_selectedType) {
       case model.TriggerType.time:
-        if (_startTime == null || _endTime == null) {
-          return 'Please select start and end times.';
-        }
-        return null;
+        return validateRuleTriggerDrafts(
+          ruleName: _nameController.text,
+          matchType: 0,
+          triggers: [_toRuleTriggerDraft()],
+        );
       case model.TriggerType.location:
         if (_latitude == null || _longitude == null || _radius == null) {
           return 'Please select a location and radius.';
@@ -558,6 +591,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           initialLatitude: _latitude,
           initialLongitude: _longitude,
           initialRadius: _radius?.toDouble(),
+          initialAddress: _locationLabel,
         ),
       ),
     );
@@ -567,6 +601,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         _latitude = result['latitude'];
         _longitude = result['longitude'];
         _radius = result['radius'];
+        _savedLocationId = null;
+        _locationLabel = _cleanText(result['address'] as String?);
       });
     }
   }
@@ -613,6 +649,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             const SizedBox(height: 8),
             DropdownButtonFormField<model.TriggerType>(
               initialValue: _selectedType,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Trigger type',
                 border: OutlineInputBorder(),
@@ -621,7 +658,11 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                   .map(
                     (t) => DropdownMenuItem(
                       value: t,
-                      child: Text(t.name.toUpperCase()),
+                      child: Text(
+                        t.name.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
@@ -643,6 +684,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                         _startTime == null
                             ? 'Select Start Time'
                             : 'Starts at: ${_startTime!.format(context)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       onTap: () async {
                         final time = await showTimePicker(
@@ -659,6 +702,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                         _endTime == null
                             ? 'Select End Time'
                             : 'Ends at: ${_endTime!.format(context)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       onTap: () async {
                         final time = await showTimePicker(
@@ -667,6 +712,20 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                         );
                         if (time != null) setState(() => _endTime = time);
                       },
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: TimeRepeatFields(
+                        repeatMode: _timeRepeatMode,
+                        repeatDaysMask: _timeRepeatDaysMask,
+                        onChanged: (repeatMode, repeatDaysMask) {
+                          setState(() {
+                            _timeRepeatMode = repeatMode;
+                            _timeRepeatDaysMask = repeatDaysMask;
+                          });
+                        },
+                      ),
                     ),
                   ],
                 ),
@@ -678,27 +737,24 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               ),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.map, color: Colors.blue),
-                        title: Text(
-                          _latitude == null || _longitude == null
-                              ? 'Tap to select a location'
-                              : 'Lat: ${_latitude!.toStringAsFixed(4)}, Lng: ${_longitude!.toStringAsFixed(4)}',
-                        ),
-                        subtitle: _radius != null
-                            ? Text(
-                                _radius! < 100
-                                    ? 'Radius: ${_radius}m - 100m+ recommended for reliability'
-                                    : 'Radius: ${_radius}m',
-                              )
-                            : null,
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: _selectLocationOnMap,
-                      ),
-                    ],
+                  padding: const EdgeInsets.all(AppTheme.cardPadding),
+                  child: LocationTriggerFields(
+                    activeSavedLocations: database.watchActiveSavedLocations(),
+                    savedLocationId: _savedLocationId,
+                    locationLabel: _locationLabel,
+                    latitude: _latitude,
+                    longitude: _longitude,
+                    radius: _radius,
+                    onSavedLocationSelected: (location) {
+                      setState(() {
+                        _latitude = location.latitude;
+                        _longitude = location.longitude;
+                        _radius = location.radius;
+                        _savedLocationId = location.id;
+                        _locationLabel = location.name;
+                      });
+                    },
+                    onPickCustomLocation: _selectLocationOnMap,
                   ),
                 ),
               ),
@@ -774,6 +830,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                   padding: const EdgeInsets.all(8.0),
                   child: DropdownButtonFormField<String>(
                     initialValue: _activityType,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Select an Activity',
                       border: InputBorder.none,
@@ -782,7 +839,11 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                     items: _availableActivities.entries.map((entry) {
                       return DropdownMenuItem<String>(
                         value: entry.key,
-                        child: Text(entry.value),
+                        child: Text(
+                          entry.value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       );
                     }).toList(),
                     onChanged: (val) => setState(() => _activityType = val),
@@ -902,6 +963,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         DropdownButtonFormField<int>(
           key: ValueKey('priority-$value'),
           initialValue: value,
+          isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Priority',
             border: OutlineInputBorder(),
@@ -910,7 +972,11 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               .map(
                 (priority) => DropdownMenuItem<int>(
                   value: priority,
-                  child: Text(priorityDescription(priority)),
+                  child: Text(
+                    priorityDescription(priority),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               )
               .toList(),
@@ -986,4 +1052,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       ),
     );
   }
+}
+
+String? _cleanText(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
 }

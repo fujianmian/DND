@@ -7,11 +7,14 @@ import '../database/database.dart';
 import '../main.dart';
 import '../models/rule.dart' as model;
 import '../models/rule_trigger_draft.dart';
+import '../models/time_repeat.dart';
 import '../services/app_catalog.dart';
 import '../services/calendar_auth_service.dart';
 import '../services/calendar_event_sync_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/calendar_trigger_fields.dart';
+import '../widgets/location_trigger_fields.dart';
+import '../widgets/time_repeat_fields.dart';
 import 'map_picker_screen.dart';
 
 class MultiTriggerRuleFormScreen extends StatefulWidget {
@@ -257,6 +260,8 @@ class _MultiTriggerRuleFormScreenState
                       const SizedBox(height: 4),
                       Text(
                         _conditionSummary(condition),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppTheme.pureBlack.withValues(alpha: 0.62),
                           fontSize: 13,
@@ -302,7 +307,13 @@ class _MultiTriggerRuleFormScreenState
                         children: [
                           Icon(_triggerIcon(type), color: AppTheme.logoBlue),
                           const SizedBox(width: 12),
-                          Text(_triggerTitle(type)),
+                          Expanded(
+                            child: Text(
+                              _triggerTitle(type),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -347,6 +358,8 @@ class _MultiTriggerRuleFormScreenState
             condition.startTime == null
                 ? 'Select Start Time'
                 : 'Starts at: ${condition.startTime!.format(context)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           onTap: () async {
             final time = await showTimePicker(
@@ -366,6 +379,8 @@ class _MultiTriggerRuleFormScreenState
             condition.endTime == null
                 ? 'Select End Time'
                 : 'Ends at: ${condition.endTime!.format(context)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           onTap: () async {
             final time = await showTimePicker(
@@ -377,28 +392,44 @@ class _MultiTriggerRuleFormScreenState
             }
           },
         ),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: TimeRepeatFields(
+            repeatMode: condition.timeRepeatMode,
+            repeatDaysMask: condition.timeRepeatDaysMask,
+            onChanged: (repeatMode, repeatDaysMask) {
+              setState(() {
+                _conditions[index]
+                  ..timeRepeatMode = repeatMode
+                  ..timeRepeatDaysMask = repeatDaysMask;
+              });
+            },
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildLocationConfiguration(int index, _ConditionDraft condition) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.map, color: AppTheme.logoBlue),
-      title: Text(
-        condition.latitude == null || condition.longitude == null
-            ? 'Tap to select a location'
-            : 'Lat: ${condition.latitude!.toStringAsFixed(4)}, Lng: ${condition.longitude!.toStringAsFixed(4)}',
-      ),
-      subtitle: condition.radius == null
-          ? null
-          : Text(
-              condition.radius! < 100
-                  ? 'Radius: ${condition.radius}m - 100m+ recommended for reliability'
-                  : 'Radius: ${condition.radius}m',
-            ),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => _selectLocationOnMap(index),
+    return LocationTriggerFields(
+      activeSavedLocations: database.watchActiveSavedLocations(),
+      savedLocationId: condition.savedLocationId,
+      locationLabel: condition.locationLabel,
+      latitude: condition.latitude,
+      longitude: condition.longitude,
+      radius: condition.radius,
+      onSavedLocationSelected: (location) {
+        setState(() {
+          _conditions[index]
+            ..latitude = location.latitude
+            ..longitude = location.longitude
+            ..radius = location.radius
+            ..savedLocationId = location.id
+            ..locationLabel = location.name;
+        });
+      },
+      onPickCustomLocation: () => _selectLocationOnMap(index),
     );
   }
 
@@ -447,6 +478,7 @@ class _MultiTriggerRuleFormScreenState
     return DropdownButtonFormField<String>(
       key: ValueKey('activity-$index-${condition.activityType}'),
       initialValue: condition.activityType,
+      isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Select an Activity',
         border: OutlineInputBorder(),
@@ -455,7 +487,11 @@ class _MultiTriggerRuleFormScreenState
           .map(
             (entry) => DropdownMenuItem<String>(
               value: entry.key,
-              child: Text(entry.value),
+              child: Text(
+                entry.value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           )
           .toList(),
@@ -524,6 +560,7 @@ class _MultiTriggerRuleFormScreenState
         DropdownButtonFormField<int>(
           key: ValueKey('priority-$_priority'),
           initialValue: _priority,
+          isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Priority',
             border: OutlineInputBorder(),
@@ -532,7 +569,11 @@ class _MultiTriggerRuleFormScreenState
               .map(
                 (priority) => DropdownMenuItem<int>(
                   value: priority,
-                  child: Text(priorityDescription(priority)),
+                  child: Text(
+                    priorityDescription(priority),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               )
               .toList(),
@@ -565,10 +606,18 @@ class _MultiTriggerRuleFormScreenState
       case RuleTriggerDraft.time:
         final start = condition.startTime?.format(context) ?? 'start time';
         final end = condition.endTime?.format(context) ?? 'end time';
-        return 'Time: $start - $end';
+        final repeat = repeatLabel(
+          condition.timeRepeatMode,
+          daysMask: condition.timeRepeatDaysMask,
+        );
+        return 'Time: $start-$end, $repeat';
       case RuleTriggerDraft.location:
         if (condition.latitude == null || condition.longitude == null) {
           return 'Location not selected';
+        }
+        final label = condition.locationLabel?.trim();
+        if (label != null && label.isNotEmpty) {
+          return 'Location: $label, ${condition.radius ?? 100}m';
         }
         return 'Location radius: ${condition.radius ?? 100}m';
       case RuleTriggerDraft.app:
@@ -681,6 +730,7 @@ class _MultiTriggerRuleFormScreenState
           initialLatitude: condition.latitude,
           initialLongitude: condition.longitude,
           initialRadius: condition.radius?.toDouble(),
+          initialAddress: condition.locationLabel,
         ),
       ),
     );
@@ -690,7 +740,9 @@ class _MultiTriggerRuleFormScreenState
         _conditions[index]
           ..latitude = result['latitude']
           ..longitude = result['longitude']
-          ..radius = result['radius'];
+          ..radius = result['radius']
+          ..savedLocationId = null
+          ..locationLabel = _cleanText(result['address'] as String?);
       });
     }
   }
@@ -713,6 +765,7 @@ class _MultiTriggerRuleFormScreenState
         isEnabled: d.Value(_isEnabled),
         matchType: d.Value(_matchType),
         priority: d.Value(_priority),
+        profileId: d.Value<int?>(widget.ruleWithTriggers.rule.profileId),
         allowStarredContacts: d.Value(_allowStarredContacts),
         allowRepeatCallers: d.Value(_allowRepeatCallers),
       );
@@ -1005,9 +1058,13 @@ class _ConditionDraft {
     this.triggerType,
     this.startTime,
     this.endTime,
+    this.timeRepeatMode = timeRepeatEveryDay,
+    this.timeRepeatDaysMask = timeRepeatEveryDayMask,
     this.latitude,
     this.longitude,
     this.radius,
+    this.savedLocationId,
+    this.locationLabel,
     this.packageName,
     this.activityType,
     this.calendarId,
@@ -1021,9 +1078,13 @@ class _ConditionDraft {
       triggerType: draft.triggerType,
       startTime: _parseTimeStringStatic(draft.startTime),
       endTime: _parseTimeStringStatic(draft.endTime),
+      timeRepeatMode: draft.timeRepeatMode,
+      timeRepeatDaysMask: draft.timeRepeatDaysMask,
       latitude: draft.latitude,
       longitude: draft.longitude,
       radius: draft.radius?.round(),
+      savedLocationId: draft.savedLocationId,
+      locationLabel: draft.locationLabel,
       packageName: draft.packageName,
       activityType: draft.activityType,
       calendarId: draft.calendarId,
@@ -1036,9 +1097,13 @@ class _ConditionDraft {
   int? triggerType;
   TimeOfDay? startTime;
   TimeOfDay? endTime;
+  int timeRepeatMode;
+  int timeRepeatDaysMask;
   double? latitude;
   double? longitude;
   int? radius;
+  int? savedLocationId;
+  String? locationLabel;
   String? packageName;
   String? activityType;
   String? calendarId;
@@ -1051,9 +1116,13 @@ class _ConditionDraft {
       triggerType: triggerType ?? -1,
       startTime: startTime?.format(context),
       endTime: endTime?.format(context),
+      timeRepeatMode: timeRepeatMode,
+      timeRepeatDaysMask: timeRepeatDaysMask,
       latitude: latitude,
       longitude: longitude,
       radius: radius?.toDouble(),
+      savedLocationId: savedLocationId,
+      locationLabel: locationLabel,
       packageName: packageName,
       activityType: activityType,
       calendarId: calendarId,
@@ -1079,4 +1148,10 @@ class _ConditionDraft {
       return null;
     }
   }
+}
+
+String? _cleanText(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
 }

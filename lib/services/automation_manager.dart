@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../database/database.dart';
 import '../main.dart';
+import '../models/time_repeat.dart';
 import 'app_catalog.dart';
 import 'dnd_service.dart';
 
@@ -41,6 +42,7 @@ class AutomationSyncPayload {
 class AutomationManager with WidgetsBindingObserver {
   Timer? _timer;
   bool _isObservingLifecycle = false;
+  int _postSyncRefreshGeneration = 0;
 
   // UI State Notifiers
   final ValueNotifier<bool> isDndEnabled = ValueNotifier(false);
@@ -57,16 +59,25 @@ class AutomationManager with WidgetsBindingObserver {
   final ValueNotifier<String> nextChangeText = ValueNotifier(
     "Waiting for next rule...",
   );
+  final ValueNotifier<AutomationPauseState> automationPauseState =
+      ValueNotifier(
+        const AutomationPauseState(
+          automationPaused: false,
+          pauseUntilMillis: 0,
+          pausedAtMillis: 0,
+          pauseReason: 'manual',
+        ),
+      );
 
   void start() {
     if (!_isObservingLifecycle) {
       WidgetsBinding.instance.addObserver(this);
       _isObservingLifecycle = true;
     }
-    // Sync to Android immediately, then check every 30s to update the Flutter UI
+    // Sync to Android immediately, then check every 30s as a fallback.
     syncRulesToAndroid();
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      _updateFlutterUIState();
+      refreshUiState();
     });
   }
 
@@ -86,7 +97,7 @@ class AutomationManager with WidgetsBindingObserver {
   }
 
   Future<void> refreshUiState() async {
-    await _updateFlutterUIState();
+    await Future.wait([_updateFlutterUIState(), _updatePauseState()]);
   }
 
   // --- NEW: Core Sync Method ---
@@ -94,9 +105,16 @@ class AutomationManager with WidgetsBindingObserver {
   Future<void> syncRulesToAndroid() async {
     try {
       final activeRules = await database.getEnabledRulesWithTriggers();
+      final profiles = await database
+          .watchProfiles(includeArchived: true)
+          .first;
+      final effectiveRules = applyProfileAutomationPolicy(
+        activeRules,
+        profiles,
+      );
       final calendarBusyWindowsJson = await buildCalendarBusyWindowsJson();
       final payload = buildSyncPayloadFromRuleTriggers(
-        activeRules,
+        effectiveRules,
         calendarBusyWindowsJson: calendarBusyWindowsJson,
       );
 
@@ -138,10 +156,25 @@ class AutomationManager with WidgetsBindingObserver {
         payload.calendarBusyWindowsJson,
       );
 
-      // Update UI immediately after syncing
-      _updateFlutterUIState();
+      // Update Home/status listeners immediately, then again after native
+      // evaluation and the service's short disable grace have had time to run.
+      await refreshUiState();
+      _schedulePostSyncStateRefreshes();
     } catch (e) {
       debugPrint("Automation Sync Error: ${e.toString()}");
+    }
+  }
+
+  void _schedulePostSyncStateRefreshes() {
+    final generation = ++_postSyncRefreshGeneration;
+    for (final delay in const [
+      Duration(milliseconds: 500),
+      Duration(milliseconds: 3800),
+    ]) {
+      Timer(delay, () {
+        if (generation != _postSyncRefreshGeneration) return;
+        refreshUiState();
+      });
     }
   }
 
@@ -245,6 +278,83 @@ class AutomationManager with WidgetsBindingObserver {
     );
   }
 
+  AutomationSyncPayload buildProfileAwareSyncPayloadFromRuleTriggers(
+    List<RuleWithTriggers> rulesWithTriggers,
+    List<Profile> profiles, {
+    String calendarBusyWindowsJson = '[]',
+  }) {
+    return buildSyncPayloadFromRuleTriggers(
+      applyProfileAutomationPolicy(rulesWithTriggers, profiles),
+      calendarBusyWindowsJson: calendarBusyWindowsJson,
+    );
+  }
+
+  List<RuleWithTriggers> applyProfileAutomationPolicy(
+    List<RuleWithTriggers> rulesWithTriggers,
+    List<Profile> profiles,
+  ) {
+    final profilesById = {for (final profile in profiles) profile.id: profile};
+    final effectiveEntries = <RuleWithTriggers>[];
+
+    for (final entry in rulesWithTriggers) {
+      final rule = entry.rule;
+      if (!rule.isEnabled) {
+        debugPrint(
+          "Automation profile filter skipped rule ${rule.id} (${rule.name}): rule disabled.",
+        );
+        continue;
+      }
+
+      final profileId = rule.profileId;
+      if (profileId == null) {
+        debugPrint(
+          "Automation profile filter included unprofiled rule ${rule.id} (${rule.name}).",
+        );
+        effectiveEntries.add(entry);
+        continue;
+      }
+
+      final profile = profilesById[profileId];
+      if (profile == null) {
+        debugPrint(
+          "Automation profile filter skipped rule ${rule.id} (${rule.name}): profile $profileId missing.",
+        );
+        continue;
+      }
+
+      if (profile.isArchived) {
+        debugPrint(
+          "Automation profile filter skipped rule ${rule.id} (${rule.name}): profile ${profile.id} (${profile.name}) archived.",
+        );
+        continue;
+      }
+
+      if (!profile.isEnabled) {
+        debugPrint(
+          "Automation profile filter skipped rule ${rule.id} (${rule.name}): profile ${profile.id} (${profile.name}) disabled.",
+        );
+        continue;
+      }
+
+      debugPrint(
+        "Automation profile filter included profiled rule ${rule.id} (${rule.name}) in profile ${profile.id} (${profile.name}).",
+      );
+      effectiveEntries.add(
+        RuleWithTriggers(
+          rule: rule.copyWith(
+            allowStarredContacts:
+                rule.allowStarredContacts || profile.allowStarredContacts,
+            allowRepeatCallers:
+                rule.allowRepeatCallers || profile.allowRepeatCallers,
+          ),
+          triggers: entry.triggers,
+        ),
+      );
+    }
+
+    return effectiveEntries;
+  }
+
   Future<String> buildCalendarBusyWindowsJson([
     AppDatabase? sourceDatabase,
   ]) async {
@@ -276,7 +386,14 @@ class AutomationManager with WidgetsBindingObserver {
   ) {
     switch (trigger.triggerType) {
       case 0:
-        _addTimePayload(rule, trigger.startTime, trigger.endTime, timeRulesMap);
+        _addTimePayload(
+          rule,
+          trigger.startTime,
+          trigger.endTime,
+          timeRulesMap,
+          timeRepeatMode: trigger.timeRepeatMode,
+          timeRepeatDaysMask: trigger.timeRepeatDaysMask,
+        );
         break;
       case 1:
         _addLocationPayload(
@@ -327,6 +444,11 @@ class AutomationManager with WidgetsBindingObserver {
           'startMinute': start.minute,
           'endHour': end.hour,
           'endMinute': end.minute,
+          'timeRepeatMode': normalizeTimeRepeatMode(trigger.timeRepeatMode),
+          'timeRepeatDaysMask': normalizeTimeRepeatDaysMask(
+            trigger.timeRepeatDaysMask,
+            repeatMode: trigger.timeRepeatMode,
+          ),
         };
       case 1:
         final latitude = trigger.latitude;
@@ -381,7 +503,14 @@ class AutomationManager with WidgetsBindingObserver {
   ) {
     switch (rule.type) {
       case 0:
-        _addTimePayload(rule, rule.startTime, rule.endTime, timeRulesMap);
+        _addTimePayload(
+          rule,
+          rule.startTime,
+          rule.endTime,
+          timeRulesMap,
+          timeRepeatMode: rule.timeRepeatMode,
+          timeRepeatDaysMask: rule.timeRepeatDaysMask,
+        );
         break;
       case 1:
         _addLocationPayload(
@@ -405,13 +534,16 @@ class AutomationManager with WidgetsBindingObserver {
     Rule rule,
     String? startTime,
     String? endTime,
-    List<Map<String, dynamic>> timeRulesMap,
-  ) {
+    List<Map<String, dynamic>> timeRulesMap, {
+    required int timeRepeatMode,
+    required int timeRepeatDaysMask,
+  }) {
     if (startTime == null || endTime == null) return;
 
     final start = _parseTimeString(startTime);
     final end = _parseTimeString(endTime);
     if (start == null || end == null) return;
+    final normalizedMode = normalizeTimeRepeatMode(timeRepeatMode);
 
     timeRulesMap.add({
       'id': rule.id.toString(),
@@ -420,6 +552,11 @@ class AutomationManager with WidgetsBindingObserver {
       'startMinute': start.minute,
       'endHour': end.hour,
       'endMinute': end.minute,
+      'timeRepeatMode': normalizedMode,
+      'timeRepeatDaysMask': normalizeTimeRepeatDaysMask(
+        timeRepeatDaysMask,
+        repeatMode: normalizedMode,
+      ),
       'allowStarredContacts': rule.allowStarredContacts,
       'allowRepeatCallers': rule.allowRepeatCallers,
     });
@@ -489,18 +626,50 @@ class AutomationManager with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _updatePauseState() async {
+    try {
+      automationPauseState.value = await DndService.getAutomationPauseState();
+    } catch (e) {
+      debugPrint("Pause State Update Error: ${e.toString()}");
+    }
+  }
+
   Future<bool> _applyNativeAutomationState() async {
     final nativeState = await DndService.getAutomationDndState();
     if (nativeState == null) return false;
 
-    final displayNames = nativeState.automationDndActive
-        ? await _displayNamesForActiveRules(
-            nativeState.activeAutomationRuleNames,
-          )
-        : const <String>[];
-    final matchedRule = nativeState.automationDndActive
-        ? await _firstEnabledRuleNamed(nativeState.activeAutomationRuleNames)
-        : null;
+    if (!nativeState.automationDndActive) {
+      isDndEnabled.value = false;
+      activeRule.value = null;
+      activeRuleDisplayNames.value = const [];
+      lastAutomationDndChangedAt.value = nativeState.lastAutomationDndChangedAt;
+      activeStatusText.value = "No active rule";
+      nextChangeText.value = _statusDetailFor(nativeState, null);
+      return true;
+    }
+
+    final activeRuleNames = nativeState.activeAutomationRuleNames;
+    final effectiveRules = await _effectiveEnabledRules();
+    final matchedRules = _rulesNamed(effectiveRules, activeRuleNames);
+
+    if (activeRuleNames.isNotEmpty && matchedRules.isEmpty) {
+      debugPrint(
+        "Automation UI state ignored stale native active names: "
+        "${activeRuleNames.join(', ')}",
+      );
+      isDndEnabled.value = false;
+      activeRule.value = null;
+      activeRuleDisplayNames.value = const [];
+      lastAutomationDndChangedAt.value = nativeState.lastAutomationDndChangedAt;
+      activeStatusText.value = "No active rule";
+      nextChangeText.value = "Waiting for next rule...";
+      return true;
+    }
+
+    final displayNames = matchedRules.isEmpty
+        ? const <String>[]
+        : await Future.wait(matchedRules.map(_displayNameForRule));
+    final matchedRule = matchedRules.isEmpty ? null : matchedRules.first;
 
     isDndEnabled.value = nativeState.automationDndActive;
     activeRule.value = matchedRule;
@@ -515,9 +684,10 @@ class AutomationManager with WidgetsBindingObserver {
 
   Future<void> _updateFlutterUIStateFromLocalTimeRules() async {
     try {
-      final activeRules = await (database.select(
-        database.rules,
-      )..where((t) => t.isEnabled.equals(true))).get();
+      final activeRules = applyProfileAutomationPolicy(
+        await database.getEnabledRulesWithTriggers(),
+        await database.watchProfiles(includeArchived: true).first,
+      ).map((entry) => entry.rule).toList(growable: false);
       final now = TimeOfDay.now();
 
       bool ruleMatchFound = false;
@@ -560,47 +730,26 @@ class AutomationManager with WidgetsBindingObserver {
     }
   }
 
-  Future<List<String>> _displayNamesForActiveRules(
-    List<String> nativeRuleNames,
-  ) async {
-    if (nativeRuleNames.isEmpty) return const [];
-
-    final enabledRules = await (database.select(
-      database.rules,
-    )..where((t) => t.isEnabled.equals(true))).get();
-
-    final displayNames = <String>[];
-    for (final nativeName in nativeRuleNames) {
-      final rule = _ruleNamed(enabledRules, nativeName);
-      if (rule == null) {
-        displayNames.add(nativeName);
-        continue;
-      }
-
-      displayNames.add(await _displayNameForRule(rule));
-    }
-    return displayNames;
+  Future<List<Rule>> _effectiveEnabledRules() async {
+    return applyProfileAutomationPolicy(
+      await database.getEnabledRulesWithTriggers(),
+      await database.watchProfiles(includeArchived: true).first,
+    ).map((entry) => entry.rule).toList(growable: false);
   }
 
-  Future<Rule?> _firstEnabledRuleNamed(List<String> nativeRuleNames) async {
-    if (nativeRuleNames.isEmpty) return null;
+  List<Rule> _rulesNamed(List<Rule> rules, List<String> names) {
+    if (names.isEmpty) return const [];
 
-    final enabledRules = await (database.select(
-      database.rules,
-    )..where((t) => t.isEnabled.equals(true))).get();
-
-    for (final nativeName in nativeRuleNames) {
-      final rule = _ruleNamed(enabledRules, nativeName);
-      if (rule != null) return rule;
-    }
-    return null;
-  }
-
-  Rule? _ruleNamed(List<Rule> rules, String name) {
+    final remainingNames = [...names];
+    final matches = <Rule>[];
     for (final rule in rules) {
-      if (rule.name == name) return rule;
+      final index = remainingNames.indexOf(rule.name);
+      if (index == -1) continue;
+
+      matches.add(rule);
+      remainingNames.removeAt(index);
     }
-    return null;
+    return matches;
   }
 
   Future<String> _displayNameForRule(Rule rule) async {

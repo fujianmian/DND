@@ -12,12 +12,14 @@ class MapPickerScreen extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
   final double? initialRadius;
+  final String? initialAddress;
 
   const MapPickerScreen({
     super.key,
     this.initialLatitude,
     this.initialLongitude,
     this.initialRadius,
+    this.initialAddress,
   });
 
   @override
@@ -26,6 +28,7 @@ class MapPickerScreen extends StatefulWidget {
 
 class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _selectedLocation;
+  String? _selectedAddress;
   double _radius = 100.0;
   GoogleMapController? _mapController;
 
@@ -53,6 +56,10 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         widget.initialLongitude!,
       );
       _radius = widget.initialRadius ?? 100.0;
+      _selectedAddress = _cleanText(widget.initialAddress);
+      if (_selectedAddress != null) {
+        _searchController.text = _selectedAddress!;
+      }
     } else {
       _determinePosition();
     }
@@ -76,17 +83,31 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   }
 
   Future<void> _determinePosition() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+      final position = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[MapPicker] Current location lookup failed: $error');
+      debugPrintStack(
+        label: '[MapPicker] Current location stack trace',
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Current location could not be loaded.')),
+      );
     }
-    Position position = await Geolocator.getCurrentPosition();
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-    );
   }
 
   // Fetches autocomplete suggestions from Google Places API
@@ -117,6 +138,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
     try {
       final response = await http.get(Uri.parse(url));
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'OK') {
@@ -152,8 +174,10 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         final loc = locations.first;
         final target = LatLng(loc.latitude, loc.longitude);
 
+        if (!mounted) return;
         setState(() {
           _selectedLocation = target;
+          _selectedAddress = address.trim();
         });
 
         _mapController?.animateCamera(CameraUpdate.newLatLngZoom(target, 16.0));
@@ -208,6 +232,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   'latitude': _selectedLocation!.latitude,
                   'longitude': _selectedLocation!.longitude,
                   'radius': _radius.toInt(),
+                  'address': _selectedAddress,
                 });
               },
             ),
@@ -229,6 +254,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               setState(() {
                 _suggestions = [];
                 _selectedLocation = location;
+                _selectedAddress = null;
               });
             },
           ),
@@ -262,6 +288,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                               icon: const Icon(Icons.clear),
                               onPressed: () {
                                 _searchController.clear();
+                                _selectedAddress = null;
                                 _onSearchChanged('');
                               },
                             ),
@@ -306,7 +333,11 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                             final suggestion = _suggestions[index];
                             return ListTile(
                               leading: const Icon(Icons.location_on_outlined),
-                              title: Text(suggestion),
+                              title: Text(
+                                suggestion,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               onTap: () => _searchLocation(suggestion),
                             );
                           },
@@ -404,4 +435,10 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       ),
     );
   }
+}
+
+String? _cleanText(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
 }

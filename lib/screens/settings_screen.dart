@@ -1,16 +1,35 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:drift/drift.dart' as d;
 
+import '../database/database.dart';
 import '../main.dart';
 import '../services/app_catalog.dart';
 import '../services/calendar_auth_service.dart';
 import '../services/calendar_event_sync_service.dart';
 import '../services/dnd_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/saved_location_validation.dart';
+import 'map_picker_screen.dart';
+import 'settings/calendar_settings_screen.dart';
+import 'settings/keyword_bypass_settings_screen.dart';
+import 'settings/permissions_settings_screen.dart';
+import 'settings/priority_app_alerts_settings_screen.dart';
+import 'settings/saved_locations_settings_screen.dart';
+
+enum SettingsSection {
+  permissions,
+  calendar,
+  keywordBypass,
+  priorityAppAlerts,
+  savedLocations,
+}
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.section});
+
+  final SettingsSection? section;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -23,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isLoading = true;
   bool _isSaving = false;
   bool _keywordBypassEnabled = false;
+  bool _priorityAppAlertsEnabled = false;
   bool _dndAccessGranted = false;
   bool _notificationListenerEnabled = false;
   bool _notificationPermissionGranted = false;
@@ -32,11 +52,16 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _activityRecognitionPermissionGranted = false;
   bool _isCalendarAuthBusy = false;
   bool _isCalendarSyncBusy = false;
+  bool _isCalendarDebugInfoLoading = false;
+  bool _showCalendarDebugInfo = false;
+  bool _isSavingSavedLocation = false;
   CalendarConnectionMetadata _calendarMetadata =
       const CalendarConnectionMetadata(connected: false);
+  CalendarAuthDebugConfigurationInfo? _calendarDebugInfo;
   CalendarEventSyncResult? _lastCalendarSyncResult;
   List<String> _keywords = const ['urgent', 'emergency', 'asap'];
   Set<String> _selectedPackages = {};
+  Set<String> _priorityAppAlertPackages = {};
   List<AppCatalogEntry> _installedApps = [];
 
   @override
@@ -64,6 +89,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     setState(() => _isLoading = true);
 
     final settings = await DndService.getKeywordBypassSettings();
+    final priorityAppSettings = await DndService.getSelectedAppBypassSettings();
     final permissions = await _readPermissionStates();
     final calendarMetadata = await calendarAuthService.getConnectionMetadata();
     final apps = await appCatalog.loadInstalledApps();
@@ -73,6 +99,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       _keywordBypassEnabled = settings.enabled;
       _keywords = settings.keywords;
       _selectedPackages = settings.packages.toSet();
+      _priorityAppAlertsEnabled = priorityAppSettings.enabled;
+      _priorityAppAlertPackages = priorityAppSettings.packages.toSet();
       _applyPermissionStates(permissions);
       _calendarMetadata = calendarMetadata;
       _installedApps = apps;
@@ -129,7 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-  Future<void> _saveSettings() async {
+  Future<void> _saveKeywordBypassSettings() async {
     setState(() => _isSaving = true);
     await DndService.saveKeywordBypassSettings(
       enabled: _keywordBypassEnabled,
@@ -142,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _setKeywordBypassEnabled(bool value) async {
     setState(() => _keywordBypassEnabled = value);
-    await _saveSettings();
+    await _saveKeywordBypassSettings();
   }
 
   Future<void> _addKeyword() async {
@@ -161,14 +189,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       _keywords = [..._keywords, keyword];
       _keywordController.clear();
     });
-    await _saveSettings();
+    await _saveKeywordBypassSettings();
   }
 
   Future<void> _removeKeyword(String keyword) async {
     setState(() {
       _keywords = _keywords.where((item) => item != keyword).toList();
     });
-    await _saveSettings();
+    await _saveKeywordBypassSettings();
   }
 
   Future<void> _togglePackage(String packageName, bool selected) async {
@@ -181,7 +209,38 @@ class _SettingsScreenState extends State<SettingsScreen>
             .toSet();
       }
     });
-    await _saveSettings();
+    await _saveKeywordBypassSettings();
+  }
+
+  Future<void> _savePriorityAppAlertSettings() async {
+    setState(() => _isSaving = true);
+    await DndService.saveSelectedAppBypassSettings(
+      enabled: _priorityAppAlertsEnabled,
+      packages: _priorityAppAlertPackages.toList(),
+    );
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+  }
+
+  Future<void> _setPriorityAppAlertsEnabled(bool value) async {
+    setState(() => _priorityAppAlertsEnabled = value);
+    await _savePriorityAppAlertSettings();
+  }
+
+  Future<void> _togglePriorityAppPackage(
+    String packageName,
+    bool selected,
+  ) async {
+    setState(() {
+      if (selected) {
+        _priorityAppAlertPackages = {..._priorityAppAlertPackages, packageName};
+      } else {
+        _priorityAppAlertPackages = _priorityAppAlertPackages
+            .where((value) => value != packageName)
+            .toSet();
+      }
+    });
+    await _savePriorityAppAlertSettings();
   }
 
   Future<void> _openNotificationAccessSettings() async {
@@ -235,6 +294,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           ? 'Google Calendar connected as ${result.email}.'
           : result.message,
     );
+    if (_showCalendarDebugInfo) {
+      await _loadCalendarDebugInfo();
+    }
   }
 
   Future<void> _disconnectCalendar() async {
@@ -249,11 +311,34 @@ class _SettingsScreenState extends State<SettingsScreen>
         _lastCalendarSyncResult = null;
       });
       _showSnackBar('Google Calendar disconnected.');
+      if (_showCalendarDebugInfo) {
+        await _loadCalendarDebugInfo();
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _isCalendarAuthBusy = false);
       _showSnackBar('Google Calendar could not be disconnected.');
     }
+  }
+
+  Future<void> _loadCalendarDebugInfo() async {
+    if (kReleaseMode) return;
+    setState(() => _isCalendarDebugInfoLoading = true);
+    final debugInfo = await calendarAuthService.getDebugConfigurationInfo();
+    if (!mounted) return;
+    setState(() {
+      _calendarDebugInfo = debugInfo;
+      _isCalendarDebugInfoLoading = false;
+    });
+  }
+
+  Future<void> _copyCalendarDebugInfo() async {
+    final debugInfo =
+        _calendarDebugInfo ??
+        await calendarAuthService.getDebugConfigurationInfo();
+    await Clipboard.setData(ClipboardData(text: debugInfo.toDebugText()));
+    if (!mounted) return;
+    _showSnackBar('Calendar sign-in debug info copied.');
   }
 
   Future<void> _refreshCalendarBusyWindows() async {
@@ -302,9 +387,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     final bottomSafePadding = MediaQuery.paddingOf(context).bottom;
+    final section = widget.section;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(_pageTitle(section))),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -316,18 +402,201 @@ class _SettingsScreenState extends State<SettingsScreen>
                   AppTheme.pagePadding,
                   AppTheme.sectionGap + bottomSafePadding,
                 ),
-                children: [
-                  _buildPrivacyHeader(),
-                  const SizedBox(height: AppTheme.sectionGap),
-                  _buildPermissionsSection(),
-                  const SizedBox(height: AppTheme.sectionGap),
-                  _buildCalendarConnectionSection(),
-                  const SizedBox(height: AppTheme.sectionGap),
-                  _buildKeywordBypassSection(),
-                ],
+                children: _pageChildren(section),
               ),
             ),
     );
+  }
+
+  String _pageTitle(SettingsSection? section) {
+    return switch (section) {
+      SettingsSection.permissions => 'Permissions',
+      SettingsSection.calendar => 'Google Calendar',
+      SettingsSection.keywordBypass => 'Emergency keyword bypass',
+      SettingsSection.priorityAppAlerts => 'Priority app alerts',
+      SettingsSection.savedLocations => 'Saved locations',
+      null => 'Settings',
+    };
+  }
+
+  List<Widget> _pageChildren(SettingsSection? section) {
+    return switch (section) {
+      SettingsSection.permissions => [_buildPermissionsSection()],
+      SettingsSection.calendar => [_buildCalendarConnectionSection()],
+      SettingsSection.keywordBypass => [_buildKeywordBypassSection()],
+      SettingsSection.priorityAppAlerts => [_buildPriorityAppAlertsSection()],
+      SettingsSection.savedLocations => [_buildSavedLocationsSection()],
+      null => [_buildSettingsHub()],
+    };
+  }
+
+  Widget _buildSettingsHub() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildPrivacyHeader(),
+        const SizedBox(height: AppTheme.sectionGap),
+        _settingsHubCard(
+          icon: Icons.verified_user_outlined,
+          title: 'Permissions',
+          description:
+              'Manage DND, notification, usage, location, and activity access.',
+          summary: _permissionSummary(),
+          onTap: () => _openSettingsSection(SettingsSection.permissions),
+        ),
+        _settingsHubCard(
+          icon: Icons.calendar_month_outlined,
+          title: 'Google Calendar',
+          description: 'Connect Calendar for meeting-based automation.',
+          summary: _calendarSummary(),
+          onTap: () => _openSettingsSection(SettingsSection.calendar),
+        ),
+        _settingsHubCard(
+          icon: Icons.notification_important_outlined,
+          title: 'Emergency keyword bypass',
+          description: 'Alert when selected apps contain urgent keywords.',
+          summary: _keywordBypassSummary(),
+          onTap: () => _openSettingsSection(SettingsSection.keywordBypass),
+        ),
+        _settingsHubCard(
+          icon: Icons.apps_outlined,
+          title: 'Priority app alerts',
+          description: 'Quietly alerts for notifications from selected apps.',
+          summary: _priorityAppAlertsSummary(),
+          onTap: () => _openSettingsSection(SettingsSection.priorityAppAlerts),
+        ),
+        StreamBuilder<List<SavedLocation>>(
+          stream: database.watchActiveSavedLocations(),
+          builder: (context, snapshot) {
+            return _settingsHubCard(
+              icon: Icons.place_outlined,
+              title: 'Saved locations',
+              description:
+                  'Manage reusable places like Home, Office, or Library.',
+              summary: _savedLocationsSummary(snapshot.data),
+              onTap: () => _openSettingsSection(SettingsSection.savedLocations),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _settingsHubCard({
+    required IconData icon,
+    required String title,
+    required String description,
+    required String summary,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.cardPadding,
+          vertical: 10,
+        ),
+        leading: Icon(icon, color: AppTheme.logoBlue),
+        title: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppTheme.pureBlack,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(description, maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 6),
+              Text(
+                summary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppTheme.pureBlack.withValues(alpha: 0.58),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  Future<void> _openSettingsSection(SettingsSection section) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => _settingsSectionPage(section)),
+    );
+    if (mounted) {
+      await _loadSettings();
+    }
+  }
+
+  Widget _settingsSectionPage(SettingsSection section) {
+    return switch (section) {
+      SettingsSection.permissions => const PermissionsSettingsScreen(),
+      SettingsSection.calendar => const CalendarSettingsScreen(),
+      SettingsSection.keywordBypass => const KeywordBypassSettingsScreen(),
+      SettingsSection.priorityAppAlerts =>
+        const PriorityAppAlertsSettingsScreen(),
+      SettingsSection.savedLocations => const SavedLocationsSettingsScreen(),
+    };
+  }
+
+  String _permissionSummary() {
+    final grantedCount = [
+      _dndAccessGranted,
+      _notificationListenerEnabled,
+      _notificationPermissionGranted,
+      _usageAccessGranted,
+      _locationPermissionGranted,
+      _backgroundLocationPermissionGranted,
+      _activityRecognitionPermissionGranted,
+    ].where((granted) => granted).length;
+    if (grantedCount == 7) return '7/7 granted';
+    return '$grantedCount/7 granted';
+  }
+
+  String _calendarSummary() {
+    if (_calendarMetadata.connected) {
+      final email = _calendarMetadata.email;
+      return email == null || email.isEmpty
+          ? 'Connected'
+          : 'Connected as $email';
+    }
+    return 'Not connected';
+  }
+
+  String _keywordBypassSummary() {
+    if (!_keywordBypassEnabled) return 'Disabled';
+    final keywordText = _keywords.length == 1
+        ? '1 keyword'
+        : '${_keywords.length} keywords';
+    return 'Enabled, $keywordText';
+  }
+
+  String _priorityAppAlertsSummary() {
+    if (!_priorityAppAlertsEnabled) return 'Disabled';
+    final appText = _priorityAppAlertPackages.length == 1
+        ? '1 app'
+        : '${_priorityAppAlertPackages.length} apps';
+    return 'Enabled, $appText';
+  }
+
+  String _savedLocationsSummary(List<SavedLocation>? locations) {
+    final count = locations?.length;
+    if (count == null) return 'Tap to manage';
+    if (count == 0) return 'None saved';
+    if (count == 1) return '1 saved location';
+    return '$count saved locations';
   }
 
   Widget _buildPrivacyHeader() {
@@ -352,7 +621,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Rules, keywords, and monitored apps are stored locally. Notification text is checked on this device only.',
+                  'Rules, keywords, monitored apps, and priority apps are stored locally. Notification text is checked on this device only.',
                   style: TextStyle(
                     color: AppTheme.pureBlack.withValues(alpha: 0.72),
                   ),
@@ -369,7 +638,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final rows = <Widget>[
       _buildPermissionRow(
         icon: Icons.do_not_disturb_on,
-        title: 'Do Not Disturb Access',
+        title: 'DND access',
         description: 'Required for DND automation and DND policy exceptions.',
         granted: _dndAccessGranted,
         onPressed: _openDndAccessSettings,
@@ -377,16 +646,17 @@ class _SettingsScreenState extends State<SettingsScreen>
       _permissionDivider(),
       _buildPermissionRow(
         icon: Icons.notifications_active,
-        title: 'Notification Listener Access',
-        description: 'Required for emergency keyword bypass detection.',
+        title: 'Notification access',
+        description:
+            'Required for emergency keyword bypass and priority app alerts.',
         granted: _notificationListenerEnabled,
         onPressed: _openNotificationAccessSettings,
       ),
       _permissionDivider(),
       _buildPermissionRow(
         icon: Icons.notification_important,
-        title: 'Notification Permission',
-        description: 'Required to show Quietly emergency alerts.',
+        title: 'Notifications',
+        description: 'Required to show Quietly alert notifications.',
         granted: _notificationPermissionGranted,
         onPressed: _requestNotificationPermission,
         actionLabel: 'Grant',
@@ -394,7 +664,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _permissionDivider(),
       _buildPermissionRow(
         icon: Icons.query_stats,
-        title: 'Usage Access',
+        title: 'Usage access',
         description: 'Required for app foreground triggers.',
         granted: _usageAccessGranted,
         onPressed: _openUsageAccessSettings,
@@ -402,7 +672,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _permissionDivider(),
       _buildPermissionRow(
         icon: Icons.location_on,
-        title: 'Location Permission',
+        title: 'Location',
         description: 'Needed to choose places for location rules.',
         granted: _locationPermissionGranted,
         onPressed: _requestLocationPermission,
@@ -411,7 +681,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _permissionDivider(),
       _buildPermissionRow(
         icon: Icons.my_location,
-        title: 'Background Location',
+        title: 'Background location',
         description: 'Lets geofence rules activate when Quietly is not open.',
         granted: _backgroundLocationPermissionGranted,
         onPressed: _requestBackgroundLocationPermission,
@@ -420,7 +690,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _permissionDivider(),
       _buildPermissionRow(
         icon: Icons.directions_walk,
-        title: 'Activity Recognition',
+        title: 'Activity recognition',
         description: 'Required for activity and driving triggers.',
         granted: _activityRecognitionPermissionGranted,
         onPressed: _requestActivityRecognitionPermission,
@@ -445,6 +715,390 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Divider(height: 1, color: AppTheme.pureBlack.withValues(alpha: 0.1));
   }
 
+  Widget _buildSavedLocationsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Saved locations',
+          'Save places like Home, Office, or Library so you can reuse them in location rules.',
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: StreamBuilder<List<SavedLocation>>(
+            stream: database.watchActiveSavedLocations(),
+            builder: (context, snapshot) {
+              final locations = snapshot.data ?? const <SavedLocation>[];
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(AppTheme.cardPadding),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              return Column(
+                children: [
+                  if (locations.isEmpty)
+                    const ListTile(
+                      leading: Icon(Icons.place_outlined),
+                      title: Text('No saved locations yet.'),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: locations.length,
+                      separatorBuilder: (context, index) => Divider(
+                        height: 1,
+                        color: AppTheme.pureBlack.withValues(alpha: 0.1),
+                      ),
+                      itemBuilder: (context, index) {
+                        return _buildSavedLocationTile(locations[index]);
+                      },
+                    ),
+                  Divider(
+                    height: 1,
+                    color: AppTheme.pureBlack.withValues(alpha: 0.1),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(AppTheme.cardPadding),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.icon(
+                        onPressed: _isSavingSavedLocation
+                            ? null
+                            : _addSavedLocation,
+                        icon: const Icon(Icons.add_location_alt),
+                        label: const Text('Add location'),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSavedLocationTile(SavedLocation location) {
+    final subtitleLines = <String>[];
+    final address = _cleanText(location.address);
+    if (address != null) {
+      subtitleLines.add(address);
+    } else {
+      subtitleLines.add(
+        '${location.latitude.toStringAsFixed(5)}, ${location.longitude.toStringAsFixed(5)}',
+      );
+    }
+    subtitleLines.add('Radius: ${location.radius}m');
+
+    return ListTile(
+      leading: const Icon(Icons.place, color: AppTheme.logoBlue),
+      title: Text(
+        location.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          subtitleLines.join('\n'),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      isThreeLine: true,
+      trailing: Wrap(
+        spacing: 4,
+        children: [
+          IconButton(
+            tooltip: 'Edit location',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => _editSavedLocation(location),
+          ),
+          IconButton(
+            tooltip: 'Remove location',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => _confirmArchiveSavedLocation(location),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addSavedLocation() async {
+    _logSavedLocationDebug('Add saved location flow started.');
+    final name = await _promptSavedLocationName(title: 'Add location');
+    if (!mounted) return;
+    if (name == null) {
+      _logSavedLocationDebug('Add saved location cancelled at name step.');
+      return;
+    }
+    _logSavedLocationDebug('Add saved location name accepted: "$name".');
+
+    final picked = await _pickSavedLocation();
+    if (!mounted) return;
+    if (picked == null) {
+      _logSavedLocationDebug('Add saved location cancelled at map step.');
+      return;
+    }
+
+    final validationError = _validatePickedLocation(picked);
+    if (validationError != null) {
+      _logSavedLocationDebug(
+        'Add saved location validation failed: $validationError',
+      );
+      _showSnackBar(validationError);
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _logSavedLocationDebug(
+      'createSavedLocation starting: name="$name", '
+      'lat=${picked.latitude}, lng=${picked.longitude}, '
+      'radius=${picked.radius}, hasAddress=${picked.address != null}.',
+    );
+    if (mounted) {
+      setState(() => _isSavingSavedLocation = true);
+    }
+    try {
+      await database.createSavedLocation(
+        SavedLocationsCompanion.insert(
+          name: name,
+          latitude: picked.latitude,
+          longitude: picked.longitude,
+          radius: picked.radius,
+          address: d.Value(picked.address),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      if (!mounted) return;
+      _showSnackBar('Saved location added.');
+      _logSavedLocationDebug('createSavedLocation succeeded.');
+    } on ArgumentError catch (error) {
+      if (!mounted) return;
+      _logSavedLocationDebug('createSavedLocation validation error: $error');
+      _showSnackBar(error.message?.toString() ?? 'Saved location is invalid.');
+    } catch (error, stackTrace) {
+      debugPrint('[SavedLocations] createSavedLocation failed: $error');
+      debugPrintStack(
+        label: '[SavedLocations] createSavedLocation stack trace',
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      _showSnackBar('Saved location could not be saved.');
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingSavedLocation = false);
+      }
+    }
+  }
+
+  Future<void> _editSavedLocation(SavedLocation location) async {
+    _logSavedLocationDebug(
+      'Edit saved location flow started: id=${location.id}.',
+    );
+    final name = await _promptSavedLocationName(
+      title: 'Edit location',
+      initialName: location.name,
+    );
+    if (!mounted) return;
+    if (name == null) {
+      _logSavedLocationDebug('Edit saved location cancelled at name step.');
+      return;
+    }
+    _logSavedLocationDebug('Edit saved location name accepted: "$name".');
+
+    final picked = await _pickSavedLocation(initialLocation: location);
+    if (!mounted) return;
+    if (picked == null) {
+      _logSavedLocationDebug('Edit saved location cancelled at map step.');
+      return;
+    }
+
+    final validationError = _validatePickedLocation(picked);
+    if (validationError != null) {
+      _logSavedLocationDebug(
+        'Edit saved location validation failed: $validationError',
+      );
+      _showSnackBar(validationError);
+      return;
+    }
+
+    _logSavedLocationDebug(
+      'updateSavedLocation starting: id=${location.id}, name="$name", '
+      'lat=${picked.latitude}, lng=${picked.longitude}, '
+      'radius=${picked.radius}, hasAddress=${picked.address != null}.',
+    );
+    if (mounted) {
+      setState(() => _isSavingSavedLocation = true);
+    }
+    try {
+      await database.updateSavedLocation(
+        location.copyWith(
+          name: name,
+          latitude: picked.latitude,
+          longitude: picked.longitude,
+          radius: picked.radius,
+          address: d.Value(picked.address),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      await automationManager.syncRulesToAndroid();
+      if (!mounted) return;
+      _showSnackBar('Saved location updated.');
+      _logSavedLocationDebug(
+        'updateSavedLocation succeeded: id=${location.id}.',
+      );
+    } on ArgumentError catch (error) {
+      if (!mounted) return;
+      _logSavedLocationDebug('updateSavedLocation validation error: $error');
+      _showSnackBar(error.message?.toString() ?? 'Saved location is invalid.');
+    } catch (error, stackTrace) {
+      debugPrint('[SavedLocations] updateSavedLocation failed: $error');
+      debugPrintStack(
+        label: '[SavedLocations] updateSavedLocation stack trace',
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      _showSnackBar('Saved location could not be updated.');
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingSavedLocation = false);
+      }
+    }
+  }
+
+  Future<void> _confirmArchiveSavedLocation(SavedLocation location) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Remove saved location?'),
+          content: const Text(
+            'Existing rules using this place will keep working because they store a copy of the coordinates.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+
+    try {
+      _logSavedLocationDebug(
+        'archiveSavedLocation starting: id=${location.id}.',
+      );
+      await database.archiveSavedLocation(location.id);
+      if (!mounted) return;
+      _showSnackBar('Saved location removed.');
+      _logSavedLocationDebug(
+        'archiveSavedLocation succeeded: id=${location.id}.',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('[SavedLocations] archiveSavedLocation failed: $error');
+      debugPrintStack(
+        label: '[SavedLocations] archiveSavedLocation stack trace',
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      _showSnackBar('Saved location could not be removed.');
+    }
+  }
+
+  Future<String?> _promptSavedLocationName({
+    required String title,
+    String? initialName,
+  }) async {
+    return showDialog<String>(
+      context: context,
+      builder: (context) =>
+          _SavedLocationNameDialog(title: title, initialName: initialName),
+    );
+  }
+
+  Future<_PickedSavedLocation?> _pickSavedLocation({
+    SavedLocation? initialLocation,
+  }) async {
+    final result = await Navigator.push<Object?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MapPickerScreen(
+          initialLatitude: initialLocation?.latitude,
+          initialLongitude: initialLocation?.longitude,
+          initialRadius: initialLocation?.radius.toDouble(),
+          initialAddress: initialLocation?.address,
+        ),
+      ),
+    );
+    if (result == null) {
+      _logSavedLocationDebug('MapPicker returned null.');
+      return null;
+    }
+    if (result is! Map) {
+      _logSavedLocationDebug(
+        'MapPicker returned unexpected result type: ${result.runtimeType}.',
+      );
+      return const _PickedSavedLocation.invalid();
+    }
+
+    final latitude = result['latitude'];
+    final longitude = result['longitude'];
+    final radius = result['radius'];
+    _logSavedLocationDebug(
+      'MapPicker returned keys=${result.keys.join(',')}, '
+      'latType=${latitude.runtimeType}, lngType=${longitude.runtimeType}, '
+      'radiusType=${radius.runtimeType}, addressType=${result['address'].runtimeType}.',
+    );
+    if (latitude is! num || longitude is! num || radius is! num) {
+      _logSavedLocationDebug(
+        'MapPicker result invalid: missing numeric latitude/longitude/radius.',
+      );
+      return const _PickedSavedLocation.invalid();
+    }
+
+    final parsed = _PickedSavedLocation(
+      latitude: latitude.toDouble(),
+      longitude: longitude.toDouble(),
+      radius: radius.round(),
+      address: _cleanText(result['address']?.toString()),
+    );
+    _logSavedLocationDebug(
+      'MapPicker parsed result: lat=${parsed.latitude}, '
+      'lng=${parsed.longitude}, radius=${parsed.radius}, '
+      'hasAddress=${parsed.address != null}.',
+    );
+    return parsed;
+  }
+
+  String? _validatePickedLocation(_PickedSavedLocation picked) {
+    if (!picked.isValid) return 'Please select a location and radius.';
+    if (!picked.latitude.isFinite || !picked.longitude.isFinite) {
+      return 'Please select a valid map location.';
+    }
+    if (picked.radius < 50) {
+      return 'Please select a radius of at least 50m.';
+    }
+    return null;
+  }
+
+  void _logSavedLocationDebug(String message) {
+    debugPrint('[SavedLocations] $message');
+  }
+
   Widget _buildPermissionRow({
     required IconData icon,
     required String title,
@@ -458,27 +1112,36 @@ class _SettingsScreenState extends State<SettingsScreen>
         icon,
         color: granted ? AppTheme.logoBlue : AppTheme.logoPurple,
       ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: AppTheme.pureBlack,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          _statusPill(granted),
-        ],
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppTheme.pureBlack,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 4),
-        child: Text(description),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(description, maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 6),
+            _statusPill(granted),
+          ],
+        ),
       ),
       trailing: granted
           ? const Icon(Icons.check_circle, color: AppTheme.logoCyan)
-          : TextButton(onPressed: onPressed, child: Text(actionLabel)),
+          : TextButton(
+              onPressed: onPressed,
+              child: Text(
+                actionLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
       onTap: granted ? _refreshPermissionStates : onPressed,
     );
   }
@@ -486,11 +1149,6 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget _buildCalendarConnectionSection() {
     final connected = _calendarMetadata.connected;
     final email = _calendarMetadata.email;
-    final statusText = connected && email != null
-        ? 'Connected as $email'
-        : connected
-        ? 'Connected'
-        : 'Not connected';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,23 +1166,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                   Icons.event_available,
                   color: connected ? AppTheme.logoBlue : AppTheme.logoPurple,
                 ),
-                title: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Calendar connection',
-                        style: TextStyle(
-                          color: AppTheme.pureBlack,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    _connectionPill(connected),
-                  ],
+                title: const Text(
+                  'Google Calendar',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.pureBlack,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text(statusText),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _calendarConnectionStatusText(connected, email),
+                      const SizedBox(height: 6),
+                      _connectionPill(connected),
+                    ],
+                  ),
                 ),
                 trailing: TextButton(
                   onPressed: _isCalendarAuthBusy
@@ -538,7 +1198,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Text(connected ? 'Disconnect' : 'Connect'),
+                      : Text(
+                          connected ? 'Disconnect' : 'Connect',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                 ),
               ),
               Divider(
@@ -549,6 +1213,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 leading: const Icon(Icons.sync, color: AppTheme.logoBlue),
                 title: const Text(
                   'Busy window cache',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppTheme.pureBlack,
                     fontWeight: FontWeight.w600,
@@ -556,7 +1222,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text(_calendarSyncStatusText()),
+                  child: Text(
+                    _calendarSyncStatusText(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 trailing: connected
                     ? TextButton(
@@ -597,9 +1267,111 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ],
                 ),
               ),
+              if (!kReleaseMode) ...[
+                Divider(
+                  height: 1,
+                  color: AppTheme.pureBlack.withValues(alpha: 0.1),
+                ),
+                _buildCalendarDebugInfoTile(),
+              ],
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _calendarConnectionStatusText(bool connected, String? email) {
+    final cleanEmail = _cleanText(email);
+    if (!connected) {
+      return const Text('Not connected');
+    }
+    if (cleanEmail == null) {
+      return const Text('Connected');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Connected as'),
+        Text(
+          cleanEmail,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCalendarDebugInfoTile() {
+    final debugInfo = _calendarDebugInfo;
+
+    return ExpansionTile(
+      title: const Text('Calendar sign-in debug info'),
+      subtitle: const Text('Development diagnostics'),
+      initiallyExpanded: _showCalendarDebugInfo,
+      onExpansionChanged: (expanded) {
+        setState(() => _showCalendarDebugInfo = expanded);
+        if (expanded) {
+          _loadCalendarDebugInfo();
+        }
+      },
+      childrenPadding: const EdgeInsets.fromLTRB(
+        AppTheme.cardPadding,
+        0,
+        AppTheme.cardPadding,
+        AppTheme.cardPadding,
+      ),
+      children: [
+        if (_isCalendarDebugInfoLoading && debugInfo == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _isCalendarDebugInfoLoading
+                      ? null
+                      : _loadCalendarDebugInfo,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+                TextButton.icon(
+                  onPressed: debugInfo == null ? null : _copyCalendarDebugInfo,
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Copy debug info'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.pureBlack.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppTheme.pureBlack.withValues(alpha: 0.08),
+              ),
+            ),
+            child: SelectableText(
+              debugInfo?.toDebugText() ?? 'Debug info unavailable.',
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -649,6 +1421,53 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildPriorityAppAlertsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Priority app alerts',
+          'When Quietly automation DND is active, notifications from selected apps can trigger a Quietly alert.',
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              SwitchListTile(
+                title: const Text('Priority app alerts'),
+                subtitle: const Text(
+                  'Post a Quietly alert when selected apps notify during automation DND.',
+                ),
+                value: _priorityAppAlertsEnabled,
+                onChanged: _isSaving ? null : _setPriorityAppAlertsEnabled,
+              ),
+              Divider(
+                height: 1,
+                color: AppTheme.pureBlack.withValues(alpha: 0.1),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(AppTheme.cardPadding),
+                child: Text(
+                  'Quietly does not change the original app notification or turn DND off.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.pureBlack.withValues(alpha: 0.65),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!_notificationListenerEnabled) ...[
+          const SizedBox(height: 12),
+          _buildNotificationListenerWarning(),
+        ],
+        const SizedBox(height: 16),
+        _buildPriorityAppSelector(),
+      ],
+    );
+  }
+
   Widget _buildKeywordEditor() {
     return Card(
       child: Padding(
@@ -673,7 +1492,16 @@ class _SettingsScreenState extends State<SettingsScreen>
               runSpacing: 8,
               children: _keywords.map((keyword) {
                 return InputChip(
-                  label: Text(keyword),
+                  label: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width - 128,
+                    ),
+                    child: Text(
+                      keyword,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   onDeleted: _isSaving ? null : () => _removeKeyword(keyword),
                 );
               }).toList(),
@@ -707,36 +1535,85 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Widget _buildMonitoredAppSelector() {
+    return _buildAppSelectorCard(
+      title: 'Monitored apps',
+      selectedPackages: _selectedPackages,
+      onChanged: _togglePackage,
+    );
+  }
+
+  Widget _buildPriorityAppSelector() {
+    return _buildAppSelectorCard(
+      title: 'Selected apps',
+      selectedPackages: _priorityAppAlertPackages,
+      onChanged: _togglePriorityAppPackage,
+    );
+  }
+
+  Widget _buildNotificationListenerWarning() {
+    return Card(
+      color: AppTheme.logoCyan.withValues(alpha: 0.14),
+      child: ListTile(
+        leading: const Icon(Icons.notifications_active),
+        title: const Text(
+          'Notification access needed',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: const Text(
+          'Quietly needs notification listener access to detect selected app notifications.',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: TextButton(
+          onPressed: _openNotificationAccessSettings,
+          child: const Text('Open'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppSelectorCard({
+    required String title,
+    required Set<String> selectedPackages,
+    required Future<void> Function(String packageName, bool selected) onChanged,
+  }) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppTheme.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Monitored apps',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Text(
-              _selectedPackages.isEmpty
+              selectedPackages.isEmpty
                   ? 'No apps selected'
-                  : '${_selectedPackages.length} apps selected',
+                  : '${selectedPackages.length} apps selected',
               style: TextStyle(
                 color: AppTheme.pureBlack.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: 12),
-            if (_selectedPackages.isNotEmpty) ...[
+            if (selectedPackages.isNotEmpty) ...[
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _selectedPackages.map((packageName) {
+                children: selectedPackages.map((packageName) {
                   return InputChip(
-                    label: Text(_appLabel(packageName)),
+                    label: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width - 128,
+                      ),
+                      child: Text(
+                        _appLabel(packageName),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                     onDeleted: _isSaving
                         ? null
-                        : () => _togglePackage(packageName, false),
+                        : () => onChanged(packageName, false),
                   );
                 }).toList(),
               ),
@@ -759,18 +1636,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                     final packageName = app.packageName;
                     final appName = app.name;
                     final Uint8List? iconBytes = app.iconBytes;
-                    final selected = _selectedPackages.contains(packageName);
+                    final selected = selectedPackages.contains(packageName);
 
                     return CheckboxListTile(
                       value: selected,
                       onChanged: _isSaving
                           ? null
-                          : (value) =>
-                                _togglePackage(packageName, value ?? false),
+                          : (value) => onChanged(packageName, value ?? false),
                       secondary: iconBytes == null
                           ? const Icon(Icons.android, color: Colors.green)
                           : Image.memory(iconBytes, width: 28, height: 28),
-                      title: Text(appName, overflow: TextOverflow.ellipsis),
+                      title: Text(
+                        appName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       controlAffinity: ListTileControlAffinity.trailing,
                     );
                   },
@@ -788,6 +1668,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       children: [
         Text(
           title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: AppTheme.pureBlack,
@@ -796,6 +1678,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         const SizedBox(height: 4),
         Text(
           subtitle,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
         ),
       ],
@@ -812,6 +1696,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
       child: Text(
         granted ? 'Granted' : 'Missing',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: granted ? AppTheme.pureBlack : AppTheme.logoPurple,
           fontSize: 12,
@@ -831,12 +1717,105 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
       child: Text(
         connected ? 'Connected' : 'Not connected',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: connected ? AppTheme.pureBlack : AppTheme.logoPurple,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
       ),
+    );
+  }
+}
+
+class _PickedSavedLocation {
+  const _PickedSavedLocation({
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+    this.address,
+  }) : isValid = true;
+
+  const _PickedSavedLocation.invalid()
+    : latitude = 0,
+      longitude = 0,
+      radius = 0,
+      address = null,
+      isValid = false;
+
+  final double latitude;
+  final double longitude;
+  final int radius;
+  final String? address;
+  final bool isValid;
+}
+
+class _SavedLocationNameDialog extends StatefulWidget {
+  const _SavedLocationNameDialog({required this.title, this.initialName});
+
+  final String title;
+  final String? initialName;
+
+  @override
+  State<_SavedLocationNameDialog> createState() =>
+      _SavedLocationNameDialogState();
+}
+
+class _SavedLocationNameDialogState extends State<_SavedLocationNameDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _clearError() {
+    if (_errorText == null) return;
+    setState(() => _errorText = null);
+  }
+
+  void _submit() {
+    final cleaned = cleanSavedLocationName(_controller.text);
+    if (cleaned == null) {
+      setState(() => _errorText = 'Enter a name.');
+      return;
+    }
+    Navigator.of(context).pop(cleaned);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        decoration: InputDecoration(
+          labelText: 'Location name',
+          hintText: 'Home, Office, Library',
+          errorText: _errorText,
+        ),
+        textInputAction: TextInputAction.done,
+        onChanged: (_) => _clearError(),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Next')),
+      ],
     );
   }
 }
@@ -859,4 +1838,10 @@ class _PermissionStates {
   final bool locationPermissionGranted;
   final bool backgroundLocationPermissionGranted;
   final bool activityRecognitionPermissionGranted;
+}
+
+String? _cleanText(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
 }

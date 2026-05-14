@@ -74,6 +74,96 @@ class MainActivity: FlutterActivity() {
         )
     }
 
+    private fun automationPauseStateMap(state: AutomationPauseState): Map<String, Any> {
+        return mapOf(
+            "automationPaused" to state.automationPaused,
+            "pauseUntilMillis" to state.pauseUntilMillis,
+            "pausedAtMillis" to state.pausedAtMillis,
+            "pauseReason" to state.pauseReason
+        )
+    }
+
+    private fun pauseDurationMillisArg(call: MethodCall): Long? {
+        val args = call.arguments as? Map<*, *> ?: return null
+        return (args["durationMillis"] as? Number)?.toLong()
+    }
+
+    private fun requestAutomationEvaluation(reason: String) {
+        try {
+            sendBroadcast(
+                Intent(DndForegroundService.ACTION_EVALUATE_DND).apply {
+                    setPackage(packageName)
+                }
+            )
+            android.util.Log.d(
+                "DndAutomationPause",
+                "Immediate automation evaluation broadcast sent. reason=$reason"
+            )
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "DndAutomationPause",
+                "Failed to send automation evaluation broadcast. reason=$reason, exception=${e::class.java.simpleName}, message=${e.message}"
+            )
+        }
+
+        val serviceIntent = Intent(this, DndForegroundService::class.java).apply {
+            action = CachedRulePayloadStore.ACTION_RESTORE_FROM_CACHE
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            android.util.Log.d(
+                "DndAutomationPause",
+                "Automation service evaluation requested. reason=$reason"
+            )
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "DndAutomationPause",
+                "Failed to request automation service evaluation. reason=$reason, exception=${e::class.java.simpleName}, message=${e.message}"
+            )
+        }
+    }
+
+    private fun getAppDebugInfo(): Map<String, Any> {
+        val pm = packageManager
+        val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0L))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getApplicationInfo(packageName, 0)
+        }
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong())
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+        }
+        val hasInternetPermission = packageInfo.requestedPermissions
+            ?.contains(Manifest.permission.INTERNET) ?: false
+        val defaultWebClientIdIdentifier = resources.getIdentifier(
+            "default_web_client_id",
+            "string",
+            packageName
+        )
+        val hasDefaultWebClientId = defaultWebClientIdIdentifier != 0 &&
+            resources.getString(defaultWebClientIdIdentifier).isNotBlank()
+
+        return mapOf(
+            "packageName" to packageName,
+            "applicationId" to applicationContext.packageName,
+            "appLabel" to pm.getApplicationLabel(appInfo).toString(),
+            "androidSdkInt" to Build.VERSION.SDK_INT,
+            "internetPermissionDeclared" to hasInternetPermission,
+            "defaultWebClientIdResourcePresent" to hasDefaultWebClientId
+        )
+    }
+
     private fun saveKeywordBypassSettings(call: MethodCall) {
         val enabled = call.argument<Boolean>("enabled") ?: false
         val keywords = stringListArg(call, "keywords").toSet()
@@ -85,6 +175,25 @@ class MainActivity: FlutterActivity() {
             .putStringSet(KEYWORD_BYPASS_KEYWORDS, keywords)
             .putStringSet(KEYWORD_BYPASS_PACKAGES, packages)
             .apply()
+    }
+
+    private fun getSelectedAppBypassSettings(): Map<String, Any> {
+        val settings = SelectedAppBypassSettingsStore.read(this)
+        return mapOf(
+            "enabled" to settings.enabled,
+            "packages" to settings.packages.toList()
+        )
+    }
+
+    private fun saveSelectedAppBypassSettings(call: MethodCall) {
+        val enabled = call.argument<Boolean>("enabled") ?: false
+        val packages = stringListArg(call, "packages").toSet()
+
+        SelectedAppBypassSettingsStore.save(
+            context = this,
+            enabled = enabled,
+            packages = packages
+        )
     }
 
     private fun booleanArrayArg(call: MethodCall, name: String): BooleanArray {
@@ -151,6 +260,9 @@ class MainActivity: FlutterActivity() {
                 "getKeywordBypassSettings" -> {
                     result.success(getKeywordBypassSettings())
                 }
+                "getSelectedAppBypassSettings" -> {
+                    result.success(getSelectedAppBypassSettings())
+                }
                 "getAutomationDndState" -> {
                     val automationState = AutomationDndStateStore.read(this)
                     result.success(
@@ -161,8 +273,32 @@ class MainActivity: FlutterActivity() {
                         )
                     )
                 }
+                "getAutomationPauseState" -> {
+                    result.success(automationPauseStateMap(AutomationPauseStateStore.read(this)))
+                }
+                "pauseAutomation" -> {
+                    AutomationPauseStateStore.pause(this, pauseDurationMillisArg(call))
+                    requestAutomationEvaluation("pauseAutomation")
+                    result.success(automationPauseStateMap(AutomationPauseStateStore.read(this)))
+                }
+                "resumeAutomation" -> {
+                    AutomationPauseStateStore.resume(this)
+                    requestAutomationEvaluation("resumeAutomation")
+                    result.success(automationPauseStateMap(AutomationPauseStateStore.read(this)))
+                }
+                "getAppDebugInfo" -> {
+                    try {
+                        result.success(getAppDebugInfo())
+                    } catch (e: Exception) {
+                        result.error("APP_DEBUG_INFO_FAILED", e.message, null)
+                    }
+                }
                 "saveKeywordBypassSettings" -> {
                     saveKeywordBypassSettings(call)
+                    result.success(null)
+                }
+                "saveSelectedAppBypassSettings" -> {
+                    saveSelectedAppBypassSettings(call)
                     result.success(null)
                 }
                 "enableDnd" -> {
@@ -262,6 +398,8 @@ class MainActivity: FlutterActivity() {
                     val startMinutes = call.argument<ArrayList<Int>>("startMinutes")?.toIntArray() ?: intArrayOf()
                     val endHours = call.argument<ArrayList<Int>>("endHours")?.toIntArray() ?: intArrayOf()
                     val endMinutes = call.argument<ArrayList<Int>>("endMinutes")?.toIntArray() ?: intArrayOf()
+                    val timeRepeatModes = call.argument<ArrayList<Int>>("timeRepeatModes")?.toIntArray() ?: intArrayOf()
+                    val timeRepeatDaysMasks = call.argument<ArrayList<Int>>("timeRepeatDaysMasks")?.toIntArray() ?: intArrayOf()
                     val timeRuleIds = call.argument<ArrayList<String>>("timeRuleIds")?.toTypedArray() ?: emptyArray()
                     val timeRuleNames = call.argument<ArrayList<String>>("timeRuleNames")?.toTypedArray() ?: emptyArray()
                     val timeAllowStarredContacts = booleanArrayArg(call, "timeAllowStarredContacts")
@@ -298,6 +436,8 @@ class MainActivity: FlutterActivity() {
                         putExtra("startMinutes", startMinutes)
                         putExtra("endHours", endHours)
                         putExtra("endMinutes", endMinutes)
+                        putExtra("timeRepeatModes", timeRepeatModes)
+                        putExtra("timeRepeatDaysMasks", timeRepeatDaysMasks)
                         putExtra("timeRuleIds", timeRuleIds)
                         putExtra("timeRuleNames", timeRuleNames)
                         putExtra("timeAllowStarredContacts", timeAllowStarredContacts)

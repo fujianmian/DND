@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart' as d;
+import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart';
 
 import '../database/database.dart';
@@ -211,10 +212,9 @@ class CalendarEventSyncService {
     required String? keyword,
     required int fetchedAtMillis,
   }) {
-    if (event.status == 'cancelled' || event.transparency == 'transparent') {
+    if (event.status == 'cancelled') {
       return null;
     }
-    if (!eventMatchesKeyword(event, keyword)) return null;
 
     final start = event.start;
     final end = event.end;
@@ -222,6 +222,8 @@ class CalendarEventSyncService {
 
     final isAllDay = isAllDayEvent(event);
     if (isAllDay && !includeAllDay) return null;
+    if (!isAllDay && event.transparency == 'transparent') return null;
+    if (!eventMatchesKeyword(event, keyword)) return null;
 
     final startMillis = _eventDateTimeMillis(start, isAllDay: isAllDay);
     final endMillis = _eventDateTimeMillis(end, isAllDay: isAllDay);
@@ -291,6 +293,8 @@ class CalendarEventSyncService {
     final triggerId = trigger.id.toString();
     final windows = <CalendarBusyWindowDraft>[];
     var skippedCount = 0;
+    var fetchedEventCount = 0;
+    var skippedAllDayBecauseDisabledCount = 0;
     String? pageToken;
 
     do {
@@ -305,7 +309,13 @@ class CalendarEventSyncService {
         $fields:
             'items(id,status,summary,transparency,start,end),nextPageToken',
       );
-      for (final event in events.items ?? const <Event>[]) {
+      final fetchedEvents = events.items ?? const <Event>[];
+      fetchedEventCount += fetchedEvents.length;
+      for (final event in fetchedEvents) {
+        final isAllDay = isAllDayEvent(event);
+        if (isAllDay && !includeAllDay) {
+          skippedAllDayBecauseDisabledCount++;
+        }
         final window = eventToBusyWindow(
           event: event,
           triggerId: triggerId,
@@ -318,10 +328,23 @@ class CalendarEventSyncService {
           skippedCount++;
         } else {
           windows.add(window);
+          if (window.isAllDay) {
+            _logAllDayWindowCached(window);
+          }
         }
       }
       pageToken = events.nextPageToken;
     } while (pageToken != null && pageToken.isNotEmpty);
+
+    _logTriggerSyncSummary(
+      triggerId: triggerId,
+      includeAllDay: includeAllDay,
+      fetchedEventCount: fetchedEventCount,
+      skippedAllDayBecauseDisabledCount: skippedAllDayBecauseDisabledCount,
+      cachedAllDayWindowCount: windows
+          .where((window) => window.isAllDay)
+          .length,
+    );
 
     await replaceCachedWindowsForTrigger(
       triggerId: triggerId,
@@ -358,6 +381,30 @@ class CalendarEventSyncService {
 
   static int _positiveOrDefault(int? value, int defaultValue) {
     return value == null || value <= 0 ? defaultValue : value;
+  }
+
+  static void _logTriggerSyncSummary({
+    required String triggerId,
+    required bool includeAllDay,
+    required int fetchedEventCount,
+    required int skippedAllDayBecauseDisabledCount,
+    required int cachedAllDayWindowCount,
+  }) {
+    // Safe diagnostics only: no event titles, IDs, locations, or descriptions.
+    debugPrint(
+      '[CalendarSync] triggerId=$triggerId, includeAllDay=$includeAllDay, '
+      'fetchedEvents=$fetchedEventCount, '
+      'skippedAllDayBecauseIncludeFalse=$skippedAllDayBecauseDisabledCount, '
+      'cachedAllDayWindows=$cachedAllDayWindowCount',
+    );
+  }
+
+  static void _logAllDayWindowCached(CalendarBusyWindowDraft window) {
+    // Safe diagnostics only: trigger ID plus derived window bounds.
+    debugPrint(
+      '[CalendarSync] cached all-day window: triggerId=${window.triggerId}, '
+      'startMillis=${window.startMillis}, endMillis=${window.endMillis}',
+    );
   }
 }
 

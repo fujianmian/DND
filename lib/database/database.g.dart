@@ -82,6 +82,17 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>(
+    'profile_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _startTimeMeta = const VerificationMeta(
     'startTime',
   );
@@ -103,6 +114,29 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
+  );
+  static const VerificationMeta _timeRepeatModeMeta = const VerificationMeta(
+    'timeRepeatMode',
+  );
+  @override
+  late final GeneratedColumn<int> timeRepeatMode = GeneratedColumn<int>(
+    'time_repeat_mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(timeRepeatEveryDay),
+  );
+  static const VerificationMeta _timeRepeatDaysMaskMeta =
+      const VerificationMeta('timeRepeatDaysMask');
+  @override
+  late final GeneratedColumn<int> timeRepeatDaysMask = GeneratedColumn<int>(
+    'time_repeat_days_mask',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(timeRepeatEveryDayMask),
   );
   static const VerificationMeta _latitudeMeta = const VerificationMeta(
     'latitude',
@@ -133,6 +167,28 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     aliasedName,
     true,
     type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _savedLocationIdMeta = const VerificationMeta(
+    'savedLocationId',
+  );
+  @override
+  late final GeneratedColumn<int> savedLocationId = GeneratedColumn<int>(
+    'saved_location_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _locationLabelMeta = const VerificationMeta(
+    'locationLabel',
+  );
+  @override
+  late final GeneratedColumn<String> locationLabel = GeneratedColumn<String>(
+    'location_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _packageNameMeta = const VerificationMeta(
@@ -193,11 +249,16 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     matchType,
     priority,
     type,
+    profileId,
     startTime,
     endTime,
+    timeRepeatMode,
+    timeRepeatDaysMask,
     latitude,
     longitude,
     radius,
+    savedLocationId,
+    locationLabel,
     packageName,
     activityType,
     allowStarredContacts,
@@ -252,6 +313,12 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
     } else if (isInserting) {
       context.missing(_typeMeta);
     }
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    }
     if (data.containsKey('start_time')) {
       context.handle(
         _startTimeMeta,
@@ -262,6 +329,24 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
       context.handle(
         _endTimeMeta,
         endTime.isAcceptableOrUnknown(data['end_time']!, _endTimeMeta),
+      );
+    }
+    if (data.containsKey('time_repeat_mode')) {
+      context.handle(
+        _timeRepeatModeMeta,
+        timeRepeatMode.isAcceptableOrUnknown(
+          data['time_repeat_mode']!,
+          _timeRepeatModeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('time_repeat_days_mask')) {
+      context.handle(
+        _timeRepeatDaysMaskMeta,
+        timeRepeatDaysMask.isAcceptableOrUnknown(
+          data['time_repeat_days_mask']!,
+          _timeRepeatDaysMaskMeta,
+        ),
       );
     }
     if (data.containsKey('latitude')) {
@@ -280,6 +365,24 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
       context.handle(
         _radiusMeta,
         radius.isAcceptableOrUnknown(data['radius']!, _radiusMeta),
+      );
+    }
+    if (data.containsKey('saved_location_id')) {
+      context.handle(
+        _savedLocationIdMeta,
+        savedLocationId.isAcceptableOrUnknown(
+          data['saved_location_id']!,
+          _savedLocationIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('location_label')) {
+      context.handle(
+        _locationLabelMeta,
+        locationLabel.isAcceptableOrUnknown(
+          data['location_label']!,
+          _locationLabelMeta,
+        ),
       );
     }
     if (data.containsKey('package_name')) {
@@ -351,6 +454,10 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         DriftSqlType.int,
         data['${effectivePrefix}type'],
       )!,
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}profile_id'],
+      ),
       startTime: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}start_time'],
@@ -359,6 +466,14 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
         DriftSqlType.string,
         data['${effectivePrefix}end_time'],
       ),
+      timeRepeatMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}time_repeat_mode'],
+      )!,
+      timeRepeatDaysMask: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}time_repeat_days_mask'],
+      )!,
       latitude: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}latitude'],
@@ -370,6 +485,14 @@ class $RulesTable extends Rules with TableInfo<$RulesTable, Rule> {
       radius: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}radius'],
+      ),
+      savedLocationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}saved_location_id'],
+      ),
+      locationLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}location_label'],
       ),
       packageName: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -403,11 +526,16 @@ class Rule extends DataClass implements Insertable<Rule> {
   final int matchType;
   final int priority;
   final int type;
+  final int? profileId;
   final String? startTime;
   final String? endTime;
+  final int timeRepeatMode;
+  final int timeRepeatDaysMask;
   final double? latitude;
   final double? longitude;
   final int? radius;
+  final int? savedLocationId;
+  final String? locationLabel;
   final String? packageName;
   final String? activityType;
   final bool allowStarredContacts;
@@ -419,11 +547,16 @@ class Rule extends DataClass implements Insertable<Rule> {
     required this.matchType,
     required this.priority,
     required this.type,
+    this.profileId,
     this.startTime,
     this.endTime,
+    required this.timeRepeatMode,
+    required this.timeRepeatDaysMask,
     this.latitude,
     this.longitude,
     this.radius,
+    this.savedLocationId,
+    this.locationLabel,
     this.packageName,
     this.activityType,
     required this.allowStarredContacts,
@@ -438,12 +571,17 @@ class Rule extends DataClass implements Insertable<Rule> {
     map['match_type'] = Variable<int>(matchType);
     map['priority'] = Variable<int>(priority);
     map['type'] = Variable<int>(type);
+    if (!nullToAbsent || profileId != null) {
+      map['profile_id'] = Variable<int>(profileId);
+    }
     if (!nullToAbsent || startTime != null) {
       map['start_time'] = Variable<String>(startTime);
     }
     if (!nullToAbsent || endTime != null) {
       map['end_time'] = Variable<String>(endTime);
     }
+    map['time_repeat_mode'] = Variable<int>(timeRepeatMode);
+    map['time_repeat_days_mask'] = Variable<int>(timeRepeatDaysMask);
     if (!nullToAbsent || latitude != null) {
       map['latitude'] = Variable<double>(latitude);
     }
@@ -452,6 +590,12 @@ class Rule extends DataClass implements Insertable<Rule> {
     }
     if (!nullToAbsent || radius != null) {
       map['radius'] = Variable<int>(radius);
+    }
+    if (!nullToAbsent || savedLocationId != null) {
+      map['saved_location_id'] = Variable<int>(savedLocationId);
+    }
+    if (!nullToAbsent || locationLabel != null) {
+      map['location_label'] = Variable<String>(locationLabel);
     }
     if (!nullToAbsent || packageName != null) {
       map['package_name'] = Variable<String>(packageName);
@@ -472,12 +616,17 @@ class Rule extends DataClass implements Insertable<Rule> {
       matchType: Value(matchType),
       priority: Value(priority),
       type: Value(type),
+      profileId: profileId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(profileId),
       startTime: startTime == null && nullToAbsent
           ? const Value.absent()
           : Value(startTime),
       endTime: endTime == null && nullToAbsent
           ? const Value.absent()
           : Value(endTime),
+      timeRepeatMode: Value(timeRepeatMode),
+      timeRepeatDaysMask: Value(timeRepeatDaysMask),
       latitude: latitude == null && nullToAbsent
           ? const Value.absent()
           : Value(latitude),
@@ -487,6 +636,12 @@ class Rule extends DataClass implements Insertable<Rule> {
       radius: radius == null && nullToAbsent
           ? const Value.absent()
           : Value(radius),
+      savedLocationId: savedLocationId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(savedLocationId),
+      locationLabel: locationLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(locationLabel),
       packageName: packageName == null && nullToAbsent
           ? const Value.absent()
           : Value(packageName),
@@ -510,11 +665,16 @@ class Rule extends DataClass implements Insertable<Rule> {
       matchType: serializer.fromJson<int>(json['matchType']),
       priority: serializer.fromJson<int>(json['priority']),
       type: serializer.fromJson<int>(json['type']),
+      profileId: serializer.fromJson<int?>(json['profileId']),
       startTime: serializer.fromJson<String?>(json['startTime']),
       endTime: serializer.fromJson<String?>(json['endTime']),
+      timeRepeatMode: serializer.fromJson<int>(json['timeRepeatMode']),
+      timeRepeatDaysMask: serializer.fromJson<int>(json['timeRepeatDaysMask']),
       latitude: serializer.fromJson<double?>(json['latitude']),
       longitude: serializer.fromJson<double?>(json['longitude']),
       radius: serializer.fromJson<int?>(json['radius']),
+      savedLocationId: serializer.fromJson<int?>(json['savedLocationId']),
+      locationLabel: serializer.fromJson<String?>(json['locationLabel']),
       packageName: serializer.fromJson<String?>(json['packageName']),
       activityType: serializer.fromJson<String?>(json['activityType']),
       allowStarredContacts: serializer.fromJson<bool>(
@@ -533,11 +693,16 @@ class Rule extends DataClass implements Insertable<Rule> {
       'matchType': serializer.toJson<int>(matchType),
       'priority': serializer.toJson<int>(priority),
       'type': serializer.toJson<int>(type),
+      'profileId': serializer.toJson<int?>(profileId),
       'startTime': serializer.toJson<String?>(startTime),
       'endTime': serializer.toJson<String?>(endTime),
+      'timeRepeatMode': serializer.toJson<int>(timeRepeatMode),
+      'timeRepeatDaysMask': serializer.toJson<int>(timeRepeatDaysMask),
       'latitude': serializer.toJson<double?>(latitude),
       'longitude': serializer.toJson<double?>(longitude),
       'radius': serializer.toJson<int?>(radius),
+      'savedLocationId': serializer.toJson<int?>(savedLocationId),
+      'locationLabel': serializer.toJson<String?>(locationLabel),
       'packageName': serializer.toJson<String?>(packageName),
       'activityType': serializer.toJson<String?>(activityType),
       'allowStarredContacts': serializer.toJson<bool>(allowStarredContacts),
@@ -552,11 +717,16 @@ class Rule extends DataClass implements Insertable<Rule> {
     int? matchType,
     int? priority,
     int? type,
+    Value<int?> profileId = const Value.absent(),
     Value<String?> startTime = const Value.absent(),
     Value<String?> endTime = const Value.absent(),
+    int? timeRepeatMode,
+    int? timeRepeatDaysMask,
     Value<double?> latitude = const Value.absent(),
     Value<double?> longitude = const Value.absent(),
     Value<int?> radius = const Value.absent(),
+    Value<int?> savedLocationId = const Value.absent(),
+    Value<String?> locationLabel = const Value.absent(),
     Value<String?> packageName = const Value.absent(),
     Value<String?> activityType = const Value.absent(),
     bool? allowStarredContacts,
@@ -568,11 +738,20 @@ class Rule extends DataClass implements Insertable<Rule> {
     matchType: matchType ?? this.matchType,
     priority: priority ?? this.priority,
     type: type ?? this.type,
+    profileId: profileId.present ? profileId.value : this.profileId,
     startTime: startTime.present ? startTime.value : this.startTime,
     endTime: endTime.present ? endTime.value : this.endTime,
+    timeRepeatMode: timeRepeatMode ?? this.timeRepeatMode,
+    timeRepeatDaysMask: timeRepeatDaysMask ?? this.timeRepeatDaysMask,
     latitude: latitude.present ? latitude.value : this.latitude,
     longitude: longitude.present ? longitude.value : this.longitude,
     radius: radius.present ? radius.value : this.radius,
+    savedLocationId: savedLocationId.present
+        ? savedLocationId.value
+        : this.savedLocationId,
+    locationLabel: locationLabel.present
+        ? locationLabel.value
+        : this.locationLabel,
     packageName: packageName.present ? packageName.value : this.packageName,
     activityType: activityType.present ? activityType.value : this.activityType,
     allowStarredContacts: allowStarredContacts ?? this.allowStarredContacts,
@@ -586,11 +765,24 @@ class Rule extends DataClass implements Insertable<Rule> {
       matchType: data.matchType.present ? data.matchType.value : this.matchType,
       priority: data.priority.present ? data.priority.value : this.priority,
       type: data.type.present ? data.type.value : this.type,
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
       startTime: data.startTime.present ? data.startTime.value : this.startTime,
       endTime: data.endTime.present ? data.endTime.value : this.endTime,
+      timeRepeatMode: data.timeRepeatMode.present
+          ? data.timeRepeatMode.value
+          : this.timeRepeatMode,
+      timeRepeatDaysMask: data.timeRepeatDaysMask.present
+          ? data.timeRepeatDaysMask.value
+          : this.timeRepeatDaysMask,
       latitude: data.latitude.present ? data.latitude.value : this.latitude,
       longitude: data.longitude.present ? data.longitude.value : this.longitude,
       radius: data.radius.present ? data.radius.value : this.radius,
+      savedLocationId: data.savedLocationId.present
+          ? data.savedLocationId.value
+          : this.savedLocationId,
+      locationLabel: data.locationLabel.present
+          ? data.locationLabel.value
+          : this.locationLabel,
       packageName: data.packageName.present
           ? data.packageName.value
           : this.packageName,
@@ -615,11 +807,16 @@ class Rule extends DataClass implements Insertable<Rule> {
           ..write('matchType: $matchType, ')
           ..write('priority: $priority, ')
           ..write('type: $type, ')
+          ..write('profileId: $profileId, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
+          ..write('timeRepeatMode: $timeRepeatMode, ')
+          ..write('timeRepeatDaysMask: $timeRepeatDaysMask, ')
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
+          ..write('savedLocationId: $savedLocationId, ')
+          ..write('locationLabel: $locationLabel, ')
           ..write('packageName: $packageName, ')
           ..write('activityType: $activityType, ')
           ..write('allowStarredContacts: $allowStarredContacts, ')
@@ -636,11 +833,16 @@ class Rule extends DataClass implements Insertable<Rule> {
     matchType,
     priority,
     type,
+    profileId,
     startTime,
     endTime,
+    timeRepeatMode,
+    timeRepeatDaysMask,
     latitude,
     longitude,
     radius,
+    savedLocationId,
+    locationLabel,
     packageName,
     activityType,
     allowStarredContacts,
@@ -656,11 +858,16 @@ class Rule extends DataClass implements Insertable<Rule> {
           other.matchType == this.matchType &&
           other.priority == this.priority &&
           other.type == this.type &&
+          other.profileId == this.profileId &&
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
+          other.timeRepeatMode == this.timeRepeatMode &&
+          other.timeRepeatDaysMask == this.timeRepeatDaysMask &&
           other.latitude == this.latitude &&
           other.longitude == this.longitude &&
           other.radius == this.radius &&
+          other.savedLocationId == this.savedLocationId &&
+          other.locationLabel == this.locationLabel &&
           other.packageName == this.packageName &&
           other.activityType == this.activityType &&
           other.allowStarredContacts == this.allowStarredContacts &&
@@ -674,11 +881,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
   final Value<int> matchType;
   final Value<int> priority;
   final Value<int> type;
+  final Value<int?> profileId;
   final Value<String?> startTime;
   final Value<String?> endTime;
+  final Value<int> timeRepeatMode;
+  final Value<int> timeRepeatDaysMask;
   final Value<double?> latitude;
   final Value<double?> longitude;
   final Value<int?> radius;
+  final Value<int?> savedLocationId;
+  final Value<String?> locationLabel;
   final Value<String?> packageName;
   final Value<String?> activityType;
   final Value<bool> allowStarredContacts;
@@ -690,11 +902,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.matchType = const Value.absent(),
     this.priority = const Value.absent(),
     this.type = const Value.absent(),
+    this.profileId = const Value.absent(),
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
+    this.timeRepeatMode = const Value.absent(),
+    this.timeRepeatDaysMask = const Value.absent(),
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
     this.radius = const Value.absent(),
+    this.savedLocationId = const Value.absent(),
+    this.locationLabel = const Value.absent(),
     this.packageName = const Value.absent(),
     this.activityType = const Value.absent(),
     this.allowStarredContacts = const Value.absent(),
@@ -707,11 +924,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     this.matchType = const Value.absent(),
     this.priority = const Value.absent(),
     required int type,
+    this.profileId = const Value.absent(),
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
+    this.timeRepeatMode = const Value.absent(),
+    this.timeRepeatDaysMask = const Value.absent(),
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
     this.radius = const Value.absent(),
+    this.savedLocationId = const Value.absent(),
+    this.locationLabel = const Value.absent(),
     this.packageName = const Value.absent(),
     this.activityType = const Value.absent(),
     this.allowStarredContacts = const Value.absent(),
@@ -725,11 +947,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Expression<int>? matchType,
     Expression<int>? priority,
     Expression<int>? type,
+    Expression<int>? profileId,
     Expression<String>? startTime,
     Expression<String>? endTime,
+    Expression<int>? timeRepeatMode,
+    Expression<int>? timeRepeatDaysMask,
     Expression<double>? latitude,
     Expression<double>? longitude,
     Expression<int>? radius,
+    Expression<int>? savedLocationId,
+    Expression<String>? locationLabel,
     Expression<String>? packageName,
     Expression<String>? activityType,
     Expression<bool>? allowStarredContacts,
@@ -742,11 +969,17 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       if (matchType != null) 'match_type': matchType,
       if (priority != null) 'priority': priority,
       if (type != null) 'type': type,
+      if (profileId != null) 'profile_id': profileId,
       if (startTime != null) 'start_time': startTime,
       if (endTime != null) 'end_time': endTime,
+      if (timeRepeatMode != null) 'time_repeat_mode': timeRepeatMode,
+      if (timeRepeatDaysMask != null)
+        'time_repeat_days_mask': timeRepeatDaysMask,
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
       if (radius != null) 'radius': radius,
+      if (savedLocationId != null) 'saved_location_id': savedLocationId,
+      if (locationLabel != null) 'location_label': locationLabel,
       if (packageName != null) 'package_name': packageName,
       if (activityType != null) 'activity_type': activityType,
       if (allowStarredContacts != null)
@@ -763,11 +996,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     Value<int>? matchType,
     Value<int>? priority,
     Value<int>? type,
+    Value<int?>? profileId,
     Value<String?>? startTime,
     Value<String?>? endTime,
+    Value<int>? timeRepeatMode,
+    Value<int>? timeRepeatDaysMask,
     Value<double?>? latitude,
     Value<double?>? longitude,
     Value<int?>? radius,
+    Value<int?>? savedLocationId,
+    Value<String?>? locationLabel,
     Value<String?>? packageName,
     Value<String?>? activityType,
     Value<bool>? allowStarredContacts,
@@ -780,11 +1018,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
       matchType: matchType ?? this.matchType,
       priority: priority ?? this.priority,
       type: type ?? this.type,
+      profileId: profileId ?? this.profileId,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
+      timeRepeatMode: timeRepeatMode ?? this.timeRepeatMode,
+      timeRepeatDaysMask: timeRepeatDaysMask ?? this.timeRepeatDaysMask,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       radius: radius ?? this.radius,
+      savedLocationId: savedLocationId ?? this.savedLocationId,
+      locationLabel: locationLabel ?? this.locationLabel,
       packageName: packageName ?? this.packageName,
       activityType: activityType ?? this.activityType,
       allowStarredContacts: allowStarredContacts ?? this.allowStarredContacts,
@@ -813,11 +1056,20 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     if (type.present) {
       map['type'] = Variable<int>(type.value);
     }
+    if (profileId.present) {
+      map['profile_id'] = Variable<int>(profileId.value);
+    }
     if (startTime.present) {
       map['start_time'] = Variable<String>(startTime.value);
     }
     if (endTime.present) {
       map['end_time'] = Variable<String>(endTime.value);
+    }
+    if (timeRepeatMode.present) {
+      map['time_repeat_mode'] = Variable<int>(timeRepeatMode.value);
+    }
+    if (timeRepeatDaysMask.present) {
+      map['time_repeat_days_mask'] = Variable<int>(timeRepeatDaysMask.value);
     }
     if (latitude.present) {
       map['latitude'] = Variable<double>(latitude.value);
@@ -827,6 +1079,12 @@ class RulesCompanion extends UpdateCompanion<Rule> {
     }
     if (radius.present) {
       map['radius'] = Variable<int>(radius.value);
+    }
+    if (savedLocationId.present) {
+      map['saved_location_id'] = Variable<int>(savedLocationId.value);
+    }
+    if (locationLabel.present) {
+      map['location_label'] = Variable<String>(locationLabel.value);
     }
     if (packageName.present) {
       map['package_name'] = Variable<String>(packageName.value);
@@ -854,11 +1112,16 @@ class RulesCompanion extends UpdateCompanion<Rule> {
           ..write('matchType: $matchType, ')
           ..write('priority: $priority, ')
           ..write('type: $type, ')
+          ..write('profileId: $profileId, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
+          ..write('timeRepeatMode: $timeRepeatMode, ')
+          ..write('timeRepeatDaysMask: $timeRepeatDaysMask, ')
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
+          ..write('savedLocationId: $savedLocationId, ')
+          ..write('locationLabel: $locationLabel, ')
           ..write('packageName: $packageName, ')
           ..write('activityType: $activityType, ')
           ..write('allowStarredContacts: $allowStarredContacts, ')
@@ -929,6 +1192,29 @@ class $RuleTriggersTable extends RuleTriggers
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _timeRepeatModeMeta = const VerificationMeta(
+    'timeRepeatMode',
+  );
+  @override
+  late final GeneratedColumn<int> timeRepeatMode = GeneratedColumn<int>(
+    'time_repeat_mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(timeRepeatEveryDay),
+  );
+  static const VerificationMeta _timeRepeatDaysMaskMeta =
+      const VerificationMeta('timeRepeatDaysMask');
+  @override
+  late final GeneratedColumn<int> timeRepeatDaysMask = GeneratedColumn<int>(
+    'time_repeat_days_mask',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(timeRepeatEveryDayMask),
+  );
   static const VerificationMeta _latitudeMeta = const VerificationMeta(
     'latitude',
   );
@@ -958,6 +1244,28 @@ class $RuleTriggersTable extends RuleTriggers
     aliasedName,
     true,
     type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _savedLocationIdMeta = const VerificationMeta(
+    'savedLocationId',
+  );
+  @override
+  late final GeneratedColumn<int> savedLocationId = GeneratedColumn<int>(
+    'saved_location_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _locationLabelMeta = const VerificationMeta(
+    'locationLabel',
+  );
+  @override
+  late final GeneratedColumn<String> locationLabel = GeneratedColumn<String>(
+    'location_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _packageNameMeta = const VerificationMeta(
@@ -1051,9 +1359,13 @@ class $RuleTriggersTable extends RuleTriggers
     triggerType,
     startTime,
     endTime,
+    timeRepeatMode,
+    timeRepeatDaysMask,
     latitude,
     longitude,
     radius,
+    savedLocationId,
+    locationLabel,
     packageName,
     activityType,
     calendarId,
@@ -1108,6 +1420,24 @@ class $RuleTriggersTable extends RuleTriggers
         endTime.isAcceptableOrUnknown(data['end_time']!, _endTimeMeta),
       );
     }
+    if (data.containsKey('time_repeat_mode')) {
+      context.handle(
+        _timeRepeatModeMeta,
+        timeRepeatMode.isAcceptableOrUnknown(
+          data['time_repeat_mode']!,
+          _timeRepeatModeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('time_repeat_days_mask')) {
+      context.handle(
+        _timeRepeatDaysMaskMeta,
+        timeRepeatDaysMask.isAcceptableOrUnknown(
+          data['time_repeat_days_mask']!,
+          _timeRepeatDaysMaskMeta,
+        ),
+      );
+    }
     if (data.containsKey('latitude')) {
       context.handle(
         _latitudeMeta,
@@ -1124,6 +1454,24 @@ class $RuleTriggersTable extends RuleTriggers
       context.handle(
         _radiusMeta,
         radius.isAcceptableOrUnknown(data['radius']!, _radiusMeta),
+      );
+    }
+    if (data.containsKey('saved_location_id')) {
+      context.handle(
+        _savedLocationIdMeta,
+        savedLocationId.isAcceptableOrUnknown(
+          data['saved_location_id']!,
+          _savedLocationIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('location_label')) {
+      context.handle(
+        _locationLabelMeta,
+        locationLabel.isAcceptableOrUnknown(
+          data['location_label']!,
+          _locationLabelMeta,
+        ),
       );
     }
     if (data.containsKey('package_name')) {
@@ -1212,6 +1560,14 @@ class $RuleTriggersTable extends RuleTriggers
         DriftSqlType.string,
         data['${effectivePrefix}end_time'],
       ),
+      timeRepeatMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}time_repeat_mode'],
+      )!,
+      timeRepeatDaysMask: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}time_repeat_days_mask'],
+      )!,
       latitude: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}latitude'],
@@ -1223,6 +1579,14 @@ class $RuleTriggersTable extends RuleTriggers
       radius: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}radius'],
+      ),
+      savedLocationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}saved_location_id'],
+      ),
+      locationLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}location_label'],
       ),
       packageName: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -1267,9 +1631,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
   final int triggerType;
   final String? startTime;
   final String? endTime;
+  final int timeRepeatMode;
+  final int timeRepeatDaysMask;
   final double? latitude;
   final double? longitude;
   final double? radius;
+  final int? savedLocationId;
+  final String? locationLabel;
   final String? packageName;
   final String? activityType;
   final String? calendarId;
@@ -1283,9 +1651,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
     required this.triggerType,
     this.startTime,
     this.endTime,
+    required this.timeRepeatMode,
+    required this.timeRepeatDaysMask,
     this.latitude,
     this.longitude,
     this.radius,
+    this.savedLocationId,
+    this.locationLabel,
     this.packageName,
     this.activityType,
     this.calendarId,
@@ -1306,6 +1678,8 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
     if (!nullToAbsent || endTime != null) {
       map['end_time'] = Variable<String>(endTime);
     }
+    map['time_repeat_mode'] = Variable<int>(timeRepeatMode);
+    map['time_repeat_days_mask'] = Variable<int>(timeRepeatDaysMask);
     if (!nullToAbsent || latitude != null) {
       map['latitude'] = Variable<double>(latitude);
     }
@@ -1314,6 +1688,12 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
     }
     if (!nullToAbsent || radius != null) {
       map['radius'] = Variable<double>(radius);
+    }
+    if (!nullToAbsent || savedLocationId != null) {
+      map['saved_location_id'] = Variable<int>(savedLocationId);
+    }
+    if (!nullToAbsent || locationLabel != null) {
+      map['location_label'] = Variable<String>(locationLabel);
     }
     if (!nullToAbsent || packageName != null) {
       map['package_name'] = Variable<String>(packageName);
@@ -1346,6 +1726,8 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
       endTime: endTime == null && nullToAbsent
           ? const Value.absent()
           : Value(endTime),
+      timeRepeatMode: Value(timeRepeatMode),
+      timeRepeatDaysMask: Value(timeRepeatDaysMask),
       latitude: latitude == null && nullToAbsent
           ? const Value.absent()
           : Value(latitude),
@@ -1355,6 +1737,12 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
       radius: radius == null && nullToAbsent
           ? const Value.absent()
           : Value(radius),
+      savedLocationId: savedLocationId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(savedLocationId),
+      locationLabel: locationLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(locationLabel),
       packageName: packageName == null && nullToAbsent
           ? const Value.absent()
           : Value(packageName),
@@ -1386,9 +1774,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
       triggerType: serializer.fromJson<int>(json['triggerType']),
       startTime: serializer.fromJson<String?>(json['startTime']),
       endTime: serializer.fromJson<String?>(json['endTime']),
+      timeRepeatMode: serializer.fromJson<int>(json['timeRepeatMode']),
+      timeRepeatDaysMask: serializer.fromJson<int>(json['timeRepeatDaysMask']),
       latitude: serializer.fromJson<double?>(json['latitude']),
       longitude: serializer.fromJson<double?>(json['longitude']),
       radius: serializer.fromJson<double?>(json['radius']),
+      savedLocationId: serializer.fromJson<int?>(json['savedLocationId']),
+      locationLabel: serializer.fromJson<String?>(json['locationLabel']),
       packageName: serializer.fromJson<String?>(json['packageName']),
       activityType: serializer.fromJson<String?>(json['activityType']),
       calendarId: serializer.fromJson<String?>(json['calendarId']),
@@ -1411,9 +1803,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
       'triggerType': serializer.toJson<int>(triggerType),
       'startTime': serializer.toJson<String?>(startTime),
       'endTime': serializer.toJson<String?>(endTime),
+      'timeRepeatMode': serializer.toJson<int>(timeRepeatMode),
+      'timeRepeatDaysMask': serializer.toJson<int>(timeRepeatDaysMask),
       'latitude': serializer.toJson<double?>(latitude),
       'longitude': serializer.toJson<double?>(longitude),
       'radius': serializer.toJson<double?>(radius),
+      'savedLocationId': serializer.toJson<int?>(savedLocationId),
+      'locationLabel': serializer.toJson<String?>(locationLabel),
       'packageName': serializer.toJson<String?>(packageName),
       'activityType': serializer.toJson<String?>(activityType),
       'calendarId': serializer.toJson<String?>(calendarId),
@@ -1430,9 +1826,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
     int? triggerType,
     Value<String?> startTime = const Value.absent(),
     Value<String?> endTime = const Value.absent(),
+    int? timeRepeatMode,
+    int? timeRepeatDaysMask,
     Value<double?> latitude = const Value.absent(),
     Value<double?> longitude = const Value.absent(),
     Value<double?> radius = const Value.absent(),
+    Value<int?> savedLocationId = const Value.absent(),
+    Value<String?> locationLabel = const Value.absent(),
     Value<String?> packageName = const Value.absent(),
     Value<String?> activityType = const Value.absent(),
     Value<String?> calendarId = const Value.absent(),
@@ -1446,9 +1846,17 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
     triggerType: triggerType ?? this.triggerType,
     startTime: startTime.present ? startTime.value : this.startTime,
     endTime: endTime.present ? endTime.value : this.endTime,
+    timeRepeatMode: timeRepeatMode ?? this.timeRepeatMode,
+    timeRepeatDaysMask: timeRepeatDaysMask ?? this.timeRepeatDaysMask,
     latitude: latitude.present ? latitude.value : this.latitude,
     longitude: longitude.present ? longitude.value : this.longitude,
     radius: radius.present ? radius.value : this.radius,
+    savedLocationId: savedLocationId.present
+        ? savedLocationId.value
+        : this.savedLocationId,
+    locationLabel: locationLabel.present
+        ? locationLabel.value
+        : this.locationLabel,
     packageName: packageName.present ? packageName.value : this.packageName,
     activityType: activityType.present ? activityType.value : this.activityType,
     calendarId: calendarId.present ? calendarId.value : this.calendarId,
@@ -1470,9 +1878,21 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
           : this.triggerType,
       startTime: data.startTime.present ? data.startTime.value : this.startTime,
       endTime: data.endTime.present ? data.endTime.value : this.endTime,
+      timeRepeatMode: data.timeRepeatMode.present
+          ? data.timeRepeatMode.value
+          : this.timeRepeatMode,
+      timeRepeatDaysMask: data.timeRepeatDaysMask.present
+          ? data.timeRepeatDaysMask.value
+          : this.timeRepeatDaysMask,
       latitude: data.latitude.present ? data.latitude.value : this.latitude,
       longitude: data.longitude.present ? data.longitude.value : this.longitude,
       radius: data.radius.present ? data.radius.value : this.radius,
+      savedLocationId: data.savedLocationId.present
+          ? data.savedLocationId.value
+          : this.savedLocationId,
+      locationLabel: data.locationLabel.present
+          ? data.locationLabel.value
+          : this.locationLabel,
       packageName: data.packageName.present
           ? data.packageName.value
           : this.packageName,
@@ -1503,9 +1923,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
           ..write('triggerType: $triggerType, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
+          ..write('timeRepeatMode: $timeRepeatMode, ')
+          ..write('timeRepeatDaysMask: $timeRepeatDaysMask, ')
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
+          ..write('savedLocationId: $savedLocationId, ')
+          ..write('locationLabel: $locationLabel, ')
           ..write('packageName: $packageName, ')
           ..write('activityType: $activityType, ')
           ..write('calendarId: $calendarId, ')
@@ -1524,9 +1948,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
     triggerType,
     startTime,
     endTime,
+    timeRepeatMode,
+    timeRepeatDaysMask,
     latitude,
     longitude,
     radius,
+    savedLocationId,
+    locationLabel,
     packageName,
     activityType,
     calendarId,
@@ -1544,9 +1972,13 @@ class RuleTrigger extends DataClass implements Insertable<RuleTrigger> {
           other.triggerType == this.triggerType &&
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
+          other.timeRepeatMode == this.timeRepeatMode &&
+          other.timeRepeatDaysMask == this.timeRepeatDaysMask &&
           other.latitude == this.latitude &&
           other.longitude == this.longitude &&
           other.radius == this.radius &&
+          other.savedLocationId == this.savedLocationId &&
+          other.locationLabel == this.locationLabel &&
           other.packageName == this.packageName &&
           other.activityType == this.activityType &&
           other.calendarId == this.calendarId &&
@@ -1562,9 +1994,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
   final Value<int> triggerType;
   final Value<String?> startTime;
   final Value<String?> endTime;
+  final Value<int> timeRepeatMode;
+  final Value<int> timeRepeatDaysMask;
   final Value<double?> latitude;
   final Value<double?> longitude;
   final Value<double?> radius;
+  final Value<int?> savedLocationId;
+  final Value<String?> locationLabel;
   final Value<String?> packageName;
   final Value<String?> activityType;
   final Value<String?> calendarId;
@@ -1578,9 +2014,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
     this.triggerType = const Value.absent(),
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
+    this.timeRepeatMode = const Value.absent(),
+    this.timeRepeatDaysMask = const Value.absent(),
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
     this.radius = const Value.absent(),
+    this.savedLocationId = const Value.absent(),
+    this.locationLabel = const Value.absent(),
     this.packageName = const Value.absent(),
     this.activityType = const Value.absent(),
     this.calendarId = const Value.absent(),
@@ -1595,9 +2035,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
     required int triggerType,
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
+    this.timeRepeatMode = const Value.absent(),
+    this.timeRepeatDaysMask = const Value.absent(),
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
     this.radius = const Value.absent(),
+    this.savedLocationId = const Value.absent(),
+    this.locationLabel = const Value.absent(),
     this.packageName = const Value.absent(),
     this.activityType = const Value.absent(),
     this.calendarId = const Value.absent(),
@@ -1613,9 +2057,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
     Expression<int>? triggerType,
     Expression<String>? startTime,
     Expression<String>? endTime,
+    Expression<int>? timeRepeatMode,
+    Expression<int>? timeRepeatDaysMask,
     Expression<double>? latitude,
     Expression<double>? longitude,
     Expression<double>? radius,
+    Expression<int>? savedLocationId,
+    Expression<String>? locationLabel,
     Expression<String>? packageName,
     Expression<String>? activityType,
     Expression<String>? calendarId,
@@ -1630,9 +2078,14 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
       if (triggerType != null) 'trigger_type': triggerType,
       if (startTime != null) 'start_time': startTime,
       if (endTime != null) 'end_time': endTime,
+      if (timeRepeatMode != null) 'time_repeat_mode': timeRepeatMode,
+      if (timeRepeatDaysMask != null)
+        'time_repeat_days_mask': timeRepeatDaysMask,
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
       if (radius != null) 'radius': radius,
+      if (savedLocationId != null) 'saved_location_id': savedLocationId,
+      if (locationLabel != null) 'location_label': locationLabel,
       if (packageName != null) 'package_name': packageName,
       if (activityType != null) 'activity_type': activityType,
       if (calendarId != null) 'calendar_id': calendarId,
@@ -1651,9 +2104,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
     Value<int>? triggerType,
     Value<String?>? startTime,
     Value<String?>? endTime,
+    Value<int>? timeRepeatMode,
+    Value<int>? timeRepeatDaysMask,
     Value<double?>? latitude,
     Value<double?>? longitude,
     Value<double?>? radius,
+    Value<int?>? savedLocationId,
+    Value<String?>? locationLabel,
     Value<String?>? packageName,
     Value<String?>? activityType,
     Value<String?>? calendarId,
@@ -1668,9 +2125,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
       triggerType: triggerType ?? this.triggerType,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
+      timeRepeatMode: timeRepeatMode ?? this.timeRepeatMode,
+      timeRepeatDaysMask: timeRepeatDaysMask ?? this.timeRepeatDaysMask,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       radius: radius ?? this.radius,
+      savedLocationId: savedLocationId ?? this.savedLocationId,
+      locationLabel: locationLabel ?? this.locationLabel,
       packageName: packageName ?? this.packageName,
       activityType: activityType ?? this.activityType,
       calendarId: calendarId ?? this.calendarId,
@@ -1701,6 +2162,12 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
     if (endTime.present) {
       map['end_time'] = Variable<String>(endTime.value);
     }
+    if (timeRepeatMode.present) {
+      map['time_repeat_mode'] = Variable<int>(timeRepeatMode.value);
+    }
+    if (timeRepeatDaysMask.present) {
+      map['time_repeat_days_mask'] = Variable<int>(timeRepeatDaysMask.value);
+    }
     if (latitude.present) {
       map['latitude'] = Variable<double>(latitude.value);
     }
@@ -1709,6 +2176,12 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
     }
     if (radius.present) {
       map['radius'] = Variable<double>(radius.value);
+    }
+    if (savedLocationId.present) {
+      map['saved_location_id'] = Variable<int>(savedLocationId.value);
+    }
+    if (locationLabel.present) {
+      map['location_label'] = Variable<String>(locationLabel.value);
     }
     if (packageName.present) {
       map['package_name'] = Variable<String>(packageName.value);
@@ -1746,9 +2219,13 @@ class RuleTriggersCompanion extends UpdateCompanion<RuleTrigger> {
           ..write('triggerType: $triggerType, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
+          ..write('timeRepeatMode: $timeRepeatMode, ')
+          ..write('timeRepeatDaysMask: $timeRepeatDaysMask, ')
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('radius: $radius, ')
+          ..write('savedLocationId: $savedLocationId, ')
+          ..write('locationLabel: $locationLabel, ')
           ..write('packageName: $packageName, ')
           ..write('activityType: $activityType, ')
           ..write('calendarId: $calendarId, ')
@@ -2343,6 +2820,1138 @@ class CalendarBusyWindowsCacheCompanion
   }
 }
 
+class $SavedLocationsTable extends SavedLocations
+    with TableInfo<$SavedLocationsTable, SavedLocation> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SavedLocationsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 80,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _latitudeMeta = const VerificationMeta(
+    'latitude',
+  );
+  @override
+  late final GeneratedColumn<double> latitude = GeneratedColumn<double>(
+    'latitude',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _longitudeMeta = const VerificationMeta(
+    'longitude',
+  );
+  @override
+  late final GeneratedColumn<double> longitude = GeneratedColumn<double>(
+    'longitude',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _radiusMeta = const VerificationMeta('radius');
+  @override
+  late final GeneratedColumn<int> radius = GeneratedColumn<int>(
+    'radius',
+    aliasedName,
+    false,
+    check: () => const CustomExpression<bool>('radius >= 50'),
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _addressMeta = const VerificationMeta(
+    'address',
+  );
+  @override
+  late final GeneratedColumn<String> address = GeneratedColumn<String>(
+    'address',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isArchivedMeta = const VerificationMeta(
+    'isArchived',
+  );
+  @override
+  late final GeneratedColumn<bool> isArchived = GeneratedColumn<bool>(
+    'is_archived',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_archived" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    latitude,
+    longitude,
+    radius,
+    address,
+    createdAt,
+    updatedAt,
+    isArchived,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'saved_locations';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SavedLocation> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('latitude')) {
+      context.handle(
+        _latitudeMeta,
+        latitude.isAcceptableOrUnknown(data['latitude']!, _latitudeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_latitudeMeta);
+    }
+    if (data.containsKey('longitude')) {
+      context.handle(
+        _longitudeMeta,
+        longitude.isAcceptableOrUnknown(data['longitude']!, _longitudeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_longitudeMeta);
+    }
+    if (data.containsKey('radius')) {
+      context.handle(
+        _radiusMeta,
+        radius.isAcceptableOrUnknown(data['radius']!, _radiusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_radiusMeta);
+    }
+    if (data.containsKey('address')) {
+      context.handle(
+        _addressMeta,
+        address.isAcceptableOrUnknown(data['address']!, _addressMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('is_archived')) {
+      context.handle(
+        _isArchivedMeta,
+        isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SavedLocation map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SavedLocation(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      latitude: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}latitude'],
+      )!,
+      longitude: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}longitude'],
+      )!,
+      radius: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}radius'],
+      )!,
+      address: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}address'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      isArchived: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_archived'],
+      )!,
+    );
+  }
+
+  @override
+  $SavedLocationsTable createAlias(String alias) {
+    return $SavedLocationsTable(attachedDatabase, alias);
+  }
+}
+
+class SavedLocation extends DataClass implements Insertable<SavedLocation> {
+  final int id;
+  final String name;
+  final double latitude;
+  final double longitude;
+  final int radius;
+  final String? address;
+  final int createdAt;
+  final int updatedAt;
+  final bool isArchived;
+  const SavedLocation({
+    required this.id,
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+    this.address,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.isArchived,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['latitude'] = Variable<double>(latitude);
+    map['longitude'] = Variable<double>(longitude);
+    map['radius'] = Variable<int>(radius);
+    if (!nullToAbsent || address != null) {
+      map['address'] = Variable<String>(address);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['is_archived'] = Variable<bool>(isArchived);
+    return map;
+  }
+
+  SavedLocationsCompanion toCompanion(bool nullToAbsent) {
+    return SavedLocationsCompanion(
+      id: Value(id),
+      name: Value(name),
+      latitude: Value(latitude),
+      longitude: Value(longitude),
+      radius: Value(radius),
+      address: address == null && nullToAbsent
+          ? const Value.absent()
+          : Value(address),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      isArchived: Value(isArchived),
+    );
+  }
+
+  factory SavedLocation.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SavedLocation(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      latitude: serializer.fromJson<double>(json['latitude']),
+      longitude: serializer.fromJson<double>(json['longitude']),
+      radius: serializer.fromJson<int>(json['radius']),
+      address: serializer.fromJson<String?>(json['address']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      isArchived: serializer.fromJson<bool>(json['isArchived']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'latitude': serializer.toJson<double>(latitude),
+      'longitude': serializer.toJson<double>(longitude),
+      'radius': serializer.toJson<int>(radius),
+      'address': serializer.toJson<String?>(address),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'isArchived': serializer.toJson<bool>(isArchived),
+    };
+  }
+
+  SavedLocation copyWith({
+    int? id,
+    String? name,
+    double? latitude,
+    double? longitude,
+    int? radius,
+    Value<String?> address = const Value.absent(),
+    int? createdAt,
+    int? updatedAt,
+    bool? isArchived,
+  }) => SavedLocation(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    latitude: latitude ?? this.latitude,
+    longitude: longitude ?? this.longitude,
+    radius: radius ?? this.radius,
+    address: address.present ? address.value : this.address,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    isArchived: isArchived ?? this.isArchived,
+  );
+  SavedLocation copyWithCompanion(SavedLocationsCompanion data) {
+    return SavedLocation(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      latitude: data.latitude.present ? data.latitude.value : this.latitude,
+      longitude: data.longitude.present ? data.longitude.value : this.longitude,
+      radius: data.radius.present ? data.radius.value : this.radius,
+      address: data.address.present ? data.address.value : this.address,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      isArchived: data.isArchived.present
+          ? data.isArchived.value
+          : this.isArchived,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SavedLocation(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('latitude: $latitude, ')
+          ..write('longitude: $longitude, ')
+          ..write('radius: $radius, ')
+          ..write('address: $address, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('isArchived: $isArchived')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    latitude,
+    longitude,
+    radius,
+    address,
+    createdAt,
+    updatedAt,
+    isArchived,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SavedLocation &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.latitude == this.latitude &&
+          other.longitude == this.longitude &&
+          other.radius == this.radius &&
+          other.address == this.address &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.isArchived == this.isArchived);
+}
+
+class SavedLocationsCompanion extends UpdateCompanion<SavedLocation> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<double> latitude;
+  final Value<double> longitude;
+  final Value<int> radius;
+  final Value<String?> address;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<bool> isArchived;
+  const SavedLocationsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.latitude = const Value.absent(),
+    this.longitude = const Value.absent(),
+    this.radius = const Value.absent(),
+    this.address = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.isArchived = const Value.absent(),
+  });
+  SavedLocationsCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    required double latitude,
+    required double longitude,
+    required int radius,
+    this.address = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.isArchived = const Value.absent(),
+  }) : name = Value(name),
+       latitude = Value(latitude),
+       longitude = Value(longitude),
+       radius = Value(radius),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<SavedLocation> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<double>? latitude,
+    Expression<double>? longitude,
+    Expression<int>? radius,
+    Expression<String>? address,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<bool>? isArchived,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (radius != null) 'radius': radius,
+      if (address != null) 'address': address,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (isArchived != null) 'is_archived': isArchived,
+    });
+  }
+
+  SavedLocationsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<double>? latitude,
+    Value<double>? longitude,
+    Value<int>? radius,
+    Value<String?>? address,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<bool>? isArchived,
+  }) {
+    return SavedLocationsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      radius: radius ?? this.radius,
+      address: address ?? this.address,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isArchived: isArchived ?? this.isArchived,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (latitude.present) {
+      map['latitude'] = Variable<double>(latitude.value);
+    }
+    if (longitude.present) {
+      map['longitude'] = Variable<double>(longitude.value);
+    }
+    if (radius.present) {
+      map['radius'] = Variable<int>(radius.value);
+    }
+    if (address.present) {
+      map['address'] = Variable<String>(address.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (isArchived.present) {
+      map['is_archived'] = Variable<bool>(isArchived.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SavedLocationsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('latitude: $latitude, ')
+          ..write('longitude: $longitude, ')
+          ..write('radius: $radius, ')
+          ..write('address: $address, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('isArchived: $isArchived')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ProfilesTable extends Profiles with TableInfo<$ProfilesTable, Profile> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ProfilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 80,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isEnabledMeta = const VerificationMeta(
+    'isEnabled',
+  );
+  @override
+  late final GeneratedColumn<bool> isEnabled = GeneratedColumn<bool>(
+    'is_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _allowStarredContactsMeta =
+      const VerificationMeta('allowStarredContacts');
+  @override
+  late final GeneratedColumn<bool> allowStarredContacts = GeneratedColumn<bool>(
+    'allow_starred_contacts',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("allow_starred_contacts" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _allowRepeatCallersMeta =
+      const VerificationMeta('allowRepeatCallers');
+  @override
+  late final GeneratedColumn<bool> allowRepeatCallers = GeneratedColumn<bool>(
+    'allow_repeat_callers',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("allow_repeat_callers" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isArchivedMeta = const VerificationMeta(
+    'isArchived',
+  );
+  @override
+  late final GeneratedColumn<bool> isArchived = GeneratedColumn<bool>(
+    'is_archived',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_archived" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    description,
+    isEnabled,
+    allowStarredContacts,
+    allowRepeatCallers,
+    createdAt,
+    updatedAt,
+    isArchived,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'profiles';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<Profile> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_enabled')) {
+      context.handle(
+        _isEnabledMeta,
+        isEnabled.isAcceptableOrUnknown(data['is_enabled']!, _isEnabledMeta),
+      );
+    }
+    if (data.containsKey('allow_starred_contacts')) {
+      context.handle(
+        _allowStarredContactsMeta,
+        allowStarredContacts.isAcceptableOrUnknown(
+          data['allow_starred_contacts']!,
+          _allowStarredContactsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('allow_repeat_callers')) {
+      context.handle(
+        _allowRepeatCallersMeta,
+        allowRepeatCallers.isAcceptableOrUnknown(
+          data['allow_repeat_callers']!,
+          _allowRepeatCallersMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('is_archived')) {
+      context.handle(
+        _isArchivedMeta,
+        isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Profile map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Profile(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      ),
+      isEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_enabled'],
+      )!,
+      allowStarredContacts: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}allow_starred_contacts'],
+      )!,
+      allowRepeatCallers: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}allow_repeat_callers'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      isArchived: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_archived'],
+      )!,
+    );
+  }
+
+  @override
+  $ProfilesTable createAlias(String alias) {
+    return $ProfilesTable(attachedDatabase, alias);
+  }
+}
+
+class Profile extends DataClass implements Insertable<Profile> {
+  final int id;
+  final String name;
+  final String? description;
+  final bool isEnabled;
+  final bool allowStarredContacts;
+  final bool allowRepeatCallers;
+  final int createdAt;
+  final int updatedAt;
+  final bool isArchived;
+  const Profile({
+    required this.id,
+    required this.name,
+    this.description,
+    required this.isEnabled,
+    required this.allowStarredContacts,
+    required this.allowRepeatCallers,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.isArchived,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
+    }
+    map['is_enabled'] = Variable<bool>(isEnabled);
+    map['allow_starred_contacts'] = Variable<bool>(allowStarredContacts);
+    map['allow_repeat_callers'] = Variable<bool>(allowRepeatCallers);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['is_archived'] = Variable<bool>(isArchived);
+    return map;
+  }
+
+  ProfilesCompanion toCompanion(bool nullToAbsent) {
+    return ProfilesCompanion(
+      id: Value(id),
+      name: Value(name),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
+      isEnabled: Value(isEnabled),
+      allowStarredContacts: Value(allowStarredContacts),
+      allowRepeatCallers: Value(allowRepeatCallers),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      isArchived: Value(isArchived),
+    );
+  }
+
+  factory Profile.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Profile(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      description: serializer.fromJson<String?>(json['description']),
+      isEnabled: serializer.fromJson<bool>(json['isEnabled']),
+      allowStarredContacts: serializer.fromJson<bool>(
+        json['allowStarredContacts'],
+      ),
+      allowRepeatCallers: serializer.fromJson<bool>(json['allowRepeatCallers']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      isArchived: serializer.fromJson<bool>(json['isArchived']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'description': serializer.toJson<String?>(description),
+      'isEnabled': serializer.toJson<bool>(isEnabled),
+      'allowStarredContacts': serializer.toJson<bool>(allowStarredContacts),
+      'allowRepeatCallers': serializer.toJson<bool>(allowRepeatCallers),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'isArchived': serializer.toJson<bool>(isArchived),
+    };
+  }
+
+  Profile copyWith({
+    int? id,
+    String? name,
+    Value<String?> description = const Value.absent(),
+    bool? isEnabled,
+    bool? allowStarredContacts,
+    bool? allowRepeatCallers,
+    int? createdAt,
+    int? updatedAt,
+    bool? isArchived,
+  }) => Profile(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    description: description.present ? description.value : this.description,
+    isEnabled: isEnabled ?? this.isEnabled,
+    allowStarredContacts: allowStarredContacts ?? this.allowStarredContacts,
+    allowRepeatCallers: allowRepeatCallers ?? this.allowRepeatCallers,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    isArchived: isArchived ?? this.isArchived,
+  );
+  Profile copyWithCompanion(ProfilesCompanion data) {
+    return Profile(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
+      isEnabled: data.isEnabled.present ? data.isEnabled.value : this.isEnabled,
+      allowStarredContacts: data.allowStarredContacts.present
+          ? data.allowStarredContacts.value
+          : this.allowStarredContacts,
+      allowRepeatCallers: data.allowRepeatCallers.present
+          ? data.allowRepeatCallers.value
+          : this.allowRepeatCallers,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      isArchived: data.isArchived.present
+          ? data.isArchived.value
+          : this.isArchived,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Profile(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('description: $description, ')
+          ..write('isEnabled: $isEnabled, ')
+          ..write('allowStarredContacts: $allowStarredContacts, ')
+          ..write('allowRepeatCallers: $allowRepeatCallers, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('isArchived: $isArchived')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    description,
+    isEnabled,
+    allowStarredContacts,
+    allowRepeatCallers,
+    createdAt,
+    updatedAt,
+    isArchived,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Profile &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.description == this.description &&
+          other.isEnabled == this.isEnabled &&
+          other.allowStarredContacts == this.allowStarredContacts &&
+          other.allowRepeatCallers == this.allowRepeatCallers &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.isArchived == this.isArchived);
+}
+
+class ProfilesCompanion extends UpdateCompanion<Profile> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<String?> description;
+  final Value<bool> isEnabled;
+  final Value<bool> allowStarredContacts;
+  final Value<bool> allowRepeatCallers;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<bool> isArchived;
+  const ProfilesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.description = const Value.absent(),
+    this.isEnabled = const Value.absent(),
+    this.allowStarredContacts = const Value.absent(),
+    this.allowRepeatCallers = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.isArchived = const Value.absent(),
+  });
+  ProfilesCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    this.description = const Value.absent(),
+    this.isEnabled = const Value.absent(),
+    this.allowStarredContacts = const Value.absent(),
+    this.allowRepeatCallers = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.isArchived = const Value.absent(),
+  }) : name = Value(name),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<Profile> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<String>? description,
+    Expression<bool>? isEnabled,
+    Expression<bool>? allowStarredContacts,
+    Expression<bool>? allowRepeatCallers,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<bool>? isArchived,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (description != null) 'description': description,
+      if (isEnabled != null) 'is_enabled': isEnabled,
+      if (allowStarredContacts != null)
+        'allow_starred_contacts': allowStarredContacts,
+      if (allowRepeatCallers != null)
+        'allow_repeat_callers': allowRepeatCallers,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (isArchived != null) 'is_archived': isArchived,
+    });
+  }
+
+  ProfilesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<String?>? description,
+    Value<bool>? isEnabled,
+    Value<bool>? allowStarredContacts,
+    Value<bool>? allowRepeatCallers,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<bool>? isArchived,
+  }) {
+    return ProfilesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      isEnabled: isEnabled ?? this.isEnabled,
+      allowStarredContacts: allowStarredContacts ?? this.allowStarredContacts,
+      allowRepeatCallers: allowRepeatCallers ?? this.allowRepeatCallers,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isArchived: isArchived ?? this.isArchived,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
+    if (isEnabled.present) {
+      map['is_enabled'] = Variable<bool>(isEnabled.value);
+    }
+    if (allowStarredContacts.present) {
+      map['allow_starred_contacts'] = Variable<bool>(
+        allowStarredContacts.value,
+      );
+    }
+    if (allowRepeatCallers.present) {
+      map['allow_repeat_callers'] = Variable<bool>(allowRepeatCallers.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (isArchived.present) {
+      map['is_archived'] = Variable<bool>(isArchived.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ProfilesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('description: $description, ')
+          ..write('isEnabled: $isEnabled, ')
+          ..write('allowStarredContacts: $allowStarredContacts, ')
+          ..write('allowRepeatCallers: $allowRepeatCallers, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('isArchived: $isArchived')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2350,6 +3959,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $RuleTriggersTable ruleTriggers = $RuleTriggersTable(this);
   late final $CalendarBusyWindowsCacheTable calendarBusyWindowsCache =
       $CalendarBusyWindowsCacheTable(this);
+  late final $SavedLocationsTable savedLocations = $SavedLocationsTable(this);
+  late final $ProfilesTable profiles = $ProfilesTable(this);
+  late final Index rulesProfileId = Index(
+    'rules_profile_id',
+    'CREATE INDEX rules_profile_id ON rules (profile_id)',
+  );
   late final Index ruleTriggersRuleId = Index(
     'rule_triggers_rule_id',
     'CREATE INDEX rule_triggers_rule_id ON rule_triggers (rule_id)',
@@ -2370,6 +3985,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     rules,
     ruleTriggers,
     calendarBusyWindowsCache,
+    savedLocations,
+    profiles,
+    rulesProfileId,
     ruleTriggersRuleId,
     calendarBusyWindowsTriggerId,
     calendarBusyWindowsStartMillis,
@@ -2384,11 +4002,16 @@ typedef $$RulesTableCreateCompanionBuilder =
       Value<int> matchType,
       Value<int> priority,
       required int type,
+      Value<int?> profileId,
       Value<String?> startTime,
       Value<String?> endTime,
+      Value<int> timeRepeatMode,
+      Value<int> timeRepeatDaysMask,
       Value<double?> latitude,
       Value<double?> longitude,
       Value<int?> radius,
+      Value<int?> savedLocationId,
+      Value<String?> locationLabel,
       Value<String?> packageName,
       Value<String?> activityType,
       Value<bool> allowStarredContacts,
@@ -2402,11 +4025,16 @@ typedef $$RulesTableUpdateCompanionBuilder =
       Value<int> matchType,
       Value<int> priority,
       Value<int> type,
+      Value<int?> profileId,
       Value<String?> startTime,
       Value<String?> endTime,
+      Value<int> timeRepeatMode,
+      Value<int> timeRepeatDaysMask,
       Value<double?> latitude,
       Value<double?> longitude,
       Value<int?> radius,
+      Value<int?> savedLocationId,
+      Value<String?> locationLabel,
       Value<String?> packageName,
       Value<String?> activityType,
       Value<bool> allowStarredContacts,
@@ -2451,6 +4079,11 @@ class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get startTime => $composableBuilder(
     column: $table.startTime,
     builder: (column) => ColumnFilters(column),
@@ -2458,6 +4091,16 @@ class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
 
   ColumnFilters<String> get endTime => $composableBuilder(
     column: $table.endTime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get timeRepeatMode => $composableBuilder(
+    column: $table.timeRepeatMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get timeRepeatDaysMask => $composableBuilder(
+    column: $table.timeRepeatDaysMask,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2473,6 +4116,16 @@ class $$RulesTableFilterComposer extends Composer<_$AppDatabase, $RulesTable> {
 
   ColumnFilters<int> get radius => $composableBuilder(
     column: $table.radius,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get savedLocationId => $composableBuilder(
+    column: $table.savedLocationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get locationLabel => $composableBuilder(
+    column: $table.locationLabel,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2536,6 +4189,11 @@ class $$RulesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get profileId => $composableBuilder(
+    column: $table.profileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get startTime => $composableBuilder(
     column: $table.startTime,
     builder: (column) => ColumnOrderings(column),
@@ -2543,6 +4201,16 @@ class $$RulesTableOrderingComposer
 
   ColumnOrderings<String> get endTime => $composableBuilder(
     column: $table.endTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get timeRepeatMode => $composableBuilder(
+    column: $table.timeRepeatMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get timeRepeatDaysMask => $composableBuilder(
+    column: $table.timeRepeatDaysMask,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -2558,6 +4226,16 @@ class $$RulesTableOrderingComposer
 
   ColumnOrderings<int> get radius => $composableBuilder(
     column: $table.radius,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get savedLocationId => $composableBuilder(
+    column: $table.savedLocationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get locationLabel => $composableBuilder(
+    column: $table.locationLabel,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -2609,11 +4287,24 @@ class $$RulesTableAnnotationComposer
   GeneratedColumn<int> get type =>
       $composableBuilder(column: $table.type, builder: (column) => column);
 
+  GeneratedColumn<int> get profileId =>
+      $composableBuilder(column: $table.profileId, builder: (column) => column);
+
   GeneratedColumn<String> get startTime =>
       $composableBuilder(column: $table.startTime, builder: (column) => column);
 
   GeneratedColumn<String> get endTime =>
       $composableBuilder(column: $table.endTime, builder: (column) => column);
+
+  GeneratedColumn<int> get timeRepeatMode => $composableBuilder(
+    column: $table.timeRepeatMode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get timeRepeatDaysMask => $composableBuilder(
+    column: $table.timeRepeatDaysMask,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<double> get latitude =>
       $composableBuilder(column: $table.latitude, builder: (column) => column);
@@ -2623,6 +4314,16 @@ class $$RulesTableAnnotationComposer
 
   GeneratedColumn<int> get radius =>
       $composableBuilder(column: $table.radius, builder: (column) => column);
+
+  GeneratedColumn<int> get savedLocationId => $composableBuilder(
+    column: $table.savedLocationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get locationLabel => $composableBuilder(
+    column: $table.locationLabel,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get packageName => $composableBuilder(
     column: $table.packageName,
@@ -2679,11 +4380,16 @@ class $$RulesTableTableManager
                 Value<int> matchType = const Value.absent(),
                 Value<int> priority = const Value.absent(),
                 Value<int> type = const Value.absent(),
+                Value<int?> profileId = const Value.absent(),
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
+                Value<int> timeRepeatMode = const Value.absent(),
+                Value<int> timeRepeatDaysMask = const Value.absent(),
                 Value<double?> latitude = const Value.absent(),
                 Value<double?> longitude = const Value.absent(),
                 Value<int?> radius = const Value.absent(),
+                Value<int?> savedLocationId = const Value.absent(),
+                Value<String?> locationLabel = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
                 Value<bool> allowStarredContacts = const Value.absent(),
@@ -2695,11 +4401,16 @@ class $$RulesTableTableManager
                 matchType: matchType,
                 priority: priority,
                 type: type,
+                profileId: profileId,
                 startTime: startTime,
                 endTime: endTime,
+                timeRepeatMode: timeRepeatMode,
+                timeRepeatDaysMask: timeRepeatDaysMask,
                 latitude: latitude,
                 longitude: longitude,
                 radius: radius,
+                savedLocationId: savedLocationId,
+                locationLabel: locationLabel,
                 packageName: packageName,
                 activityType: activityType,
                 allowStarredContacts: allowStarredContacts,
@@ -2713,11 +4424,16 @@ class $$RulesTableTableManager
                 Value<int> matchType = const Value.absent(),
                 Value<int> priority = const Value.absent(),
                 required int type,
+                Value<int?> profileId = const Value.absent(),
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
+                Value<int> timeRepeatMode = const Value.absent(),
+                Value<int> timeRepeatDaysMask = const Value.absent(),
                 Value<double?> latitude = const Value.absent(),
                 Value<double?> longitude = const Value.absent(),
                 Value<int?> radius = const Value.absent(),
+                Value<int?> savedLocationId = const Value.absent(),
+                Value<String?> locationLabel = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
                 Value<bool> allowStarredContacts = const Value.absent(),
@@ -2729,11 +4445,16 @@ class $$RulesTableTableManager
                 matchType: matchType,
                 priority: priority,
                 type: type,
+                profileId: profileId,
                 startTime: startTime,
                 endTime: endTime,
+                timeRepeatMode: timeRepeatMode,
+                timeRepeatDaysMask: timeRepeatDaysMask,
                 latitude: latitude,
                 longitude: longitude,
                 radius: radius,
+                savedLocationId: savedLocationId,
+                locationLabel: locationLabel,
                 packageName: packageName,
                 activityType: activityType,
                 allowStarredContacts: allowStarredContacts,
@@ -2768,9 +4489,13 @@ typedef $$RuleTriggersTableCreateCompanionBuilder =
       required int triggerType,
       Value<String?> startTime,
       Value<String?> endTime,
+      Value<int> timeRepeatMode,
+      Value<int> timeRepeatDaysMask,
       Value<double?> latitude,
       Value<double?> longitude,
       Value<double?> radius,
+      Value<int?> savedLocationId,
+      Value<String?> locationLabel,
       Value<String?> packageName,
       Value<String?> activityType,
       Value<String?> calendarId,
@@ -2786,9 +4511,13 @@ typedef $$RuleTriggersTableUpdateCompanionBuilder =
       Value<int> triggerType,
       Value<String?> startTime,
       Value<String?> endTime,
+      Value<int> timeRepeatMode,
+      Value<int> timeRepeatDaysMask,
       Value<double?> latitude,
       Value<double?> longitude,
       Value<double?> radius,
+      Value<int?> savedLocationId,
+      Value<String?> locationLabel,
       Value<String?> packageName,
       Value<String?> activityType,
       Value<String?> calendarId,
@@ -2832,6 +4561,16 @@ class $$RuleTriggersTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get timeRepeatMode => $composableBuilder(
+    column: $table.timeRepeatMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get timeRepeatDaysMask => $composableBuilder(
+    column: $table.timeRepeatDaysMask,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<double> get latitude => $composableBuilder(
     column: $table.latitude,
     builder: (column) => ColumnFilters(column),
@@ -2844,6 +4583,16 @@ class $$RuleTriggersTableFilterComposer
 
   ColumnFilters<double> get radius => $composableBuilder(
     column: $table.radius,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get savedLocationId => $composableBuilder(
+    column: $table.savedLocationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get locationLabel => $composableBuilder(
+    column: $table.locationLabel,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2917,6 +4666,16 @@ class $$RuleTriggersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get timeRepeatMode => $composableBuilder(
+    column: $table.timeRepeatMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get timeRepeatDaysMask => $composableBuilder(
+    column: $table.timeRepeatDaysMask,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get latitude => $composableBuilder(
     column: $table.latitude,
     builder: (column) => ColumnOrderings(column),
@@ -2929,6 +4688,16 @@ class $$RuleTriggersTableOrderingComposer
 
   ColumnOrderings<double> get radius => $composableBuilder(
     column: $table.radius,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get savedLocationId => $composableBuilder(
+    column: $table.savedLocationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get locationLabel => $composableBuilder(
+    column: $table.locationLabel,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -2994,6 +4763,16 @@ class $$RuleTriggersTableAnnotationComposer
   GeneratedColumn<String> get endTime =>
       $composableBuilder(column: $table.endTime, builder: (column) => column);
 
+  GeneratedColumn<int> get timeRepeatMode => $composableBuilder(
+    column: $table.timeRepeatMode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get timeRepeatDaysMask => $composableBuilder(
+    column: $table.timeRepeatDaysMask,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<double> get latitude =>
       $composableBuilder(column: $table.latitude, builder: (column) => column);
 
@@ -3002,6 +4781,16 @@ class $$RuleTriggersTableAnnotationComposer
 
   GeneratedColumn<double> get radius =>
       $composableBuilder(column: $table.radius, builder: (column) => column);
+
+  GeneratedColumn<int> get savedLocationId => $composableBuilder(
+    column: $table.savedLocationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get locationLabel => $composableBuilder(
+    column: $table.locationLabel,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get packageName => $composableBuilder(
     column: $table.packageName,
@@ -3073,9 +4862,13 @@ class $$RuleTriggersTableTableManager
                 Value<int> triggerType = const Value.absent(),
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
+                Value<int> timeRepeatMode = const Value.absent(),
+                Value<int> timeRepeatDaysMask = const Value.absent(),
                 Value<double?> latitude = const Value.absent(),
                 Value<double?> longitude = const Value.absent(),
                 Value<double?> radius = const Value.absent(),
+                Value<int?> savedLocationId = const Value.absent(),
+                Value<String?> locationLabel = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
                 Value<String?> calendarId = const Value.absent(),
@@ -3089,9 +4882,13 @@ class $$RuleTriggersTableTableManager
                 triggerType: triggerType,
                 startTime: startTime,
                 endTime: endTime,
+                timeRepeatMode: timeRepeatMode,
+                timeRepeatDaysMask: timeRepeatDaysMask,
                 latitude: latitude,
                 longitude: longitude,
                 radius: radius,
+                savedLocationId: savedLocationId,
+                locationLabel: locationLabel,
                 packageName: packageName,
                 activityType: activityType,
                 calendarId: calendarId,
@@ -3107,9 +4904,13 @@ class $$RuleTriggersTableTableManager
                 required int triggerType,
                 Value<String?> startTime = const Value.absent(),
                 Value<String?> endTime = const Value.absent(),
+                Value<int> timeRepeatMode = const Value.absent(),
+                Value<int> timeRepeatDaysMask = const Value.absent(),
                 Value<double?> latitude = const Value.absent(),
                 Value<double?> longitude = const Value.absent(),
                 Value<double?> radius = const Value.absent(),
+                Value<int?> savedLocationId = const Value.absent(),
+                Value<String?> locationLabel = const Value.absent(),
                 Value<String?> packageName = const Value.absent(),
                 Value<String?> activityType = const Value.absent(),
                 Value<String?> calendarId = const Value.absent(),
@@ -3123,9 +4924,13 @@ class $$RuleTriggersTableTableManager
                 triggerType: triggerType,
                 startTime: startTime,
                 endTime: endTime,
+                timeRepeatMode: timeRepeatMode,
+                timeRepeatDaysMask: timeRepeatDaysMask,
                 latitude: latitude,
                 longitude: longitude,
                 radius: radius,
+                savedLocationId: savedLocationId,
+                locationLabel: locationLabel,
                 packageName: packageName,
                 activityType: activityType,
                 calendarId: calendarId,
@@ -3456,6 +5261,552 @@ typedef $$CalendarBusyWindowsCacheTableProcessedTableManager =
       CalendarBusyWindowsCacheData,
       PrefetchHooks Function()
     >;
+typedef $$SavedLocationsTableCreateCompanionBuilder =
+    SavedLocationsCompanion Function({
+      Value<int> id,
+      required String name,
+      required double latitude,
+      required double longitude,
+      required int radius,
+      Value<String?> address,
+      required int createdAt,
+      required int updatedAt,
+      Value<bool> isArchived,
+    });
+typedef $$SavedLocationsTableUpdateCompanionBuilder =
+    SavedLocationsCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<double> latitude,
+      Value<double> longitude,
+      Value<int> radius,
+      Value<String?> address,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<bool> isArchived,
+    });
+
+class $$SavedLocationsTableFilterComposer
+    extends Composer<_$AppDatabase, $SavedLocationsTable> {
+  $$SavedLocationsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get latitude => $composableBuilder(
+    column: $table.latitude,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get longitude => $composableBuilder(
+    column: $table.longitude,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get radius => $composableBuilder(
+    column: $table.radius,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get address => $composableBuilder(
+    column: $table.address,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SavedLocationsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SavedLocationsTable> {
+  $$SavedLocationsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get latitude => $composableBuilder(
+    column: $table.latitude,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get longitude => $composableBuilder(
+    column: $table.longitude,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get radius => $composableBuilder(
+    column: $table.radius,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get address => $composableBuilder(
+    column: $table.address,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SavedLocationsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SavedLocationsTable> {
+  $$SavedLocationsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<double> get latitude =>
+      $composableBuilder(column: $table.latitude, builder: (column) => column);
+
+  GeneratedColumn<double> get longitude =>
+      $composableBuilder(column: $table.longitude, builder: (column) => column);
+
+  GeneratedColumn<int> get radius =>
+      $composableBuilder(column: $table.radius, builder: (column) => column);
+
+  GeneratedColumn<String> get address =>
+      $composableBuilder(column: $table.address, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => column,
+  );
+}
+
+class $$SavedLocationsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SavedLocationsTable,
+          SavedLocation,
+          $$SavedLocationsTableFilterComposer,
+          $$SavedLocationsTableOrderingComposer,
+          $$SavedLocationsTableAnnotationComposer,
+          $$SavedLocationsTableCreateCompanionBuilder,
+          $$SavedLocationsTableUpdateCompanionBuilder,
+          (
+            SavedLocation,
+            BaseReferences<_$AppDatabase, $SavedLocationsTable, SavedLocation>,
+          ),
+          SavedLocation,
+          PrefetchHooks Function()
+        > {
+  $$SavedLocationsTableTableManager(
+    _$AppDatabase db,
+    $SavedLocationsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SavedLocationsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SavedLocationsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SavedLocationsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<double> latitude = const Value.absent(),
+                Value<double> longitude = const Value.absent(),
+                Value<int> radius = const Value.absent(),
+                Value<String?> address = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
+              }) => SavedLocationsCompanion(
+                id: id,
+                name: name,
+                latitude: latitude,
+                longitude: longitude,
+                radius: radius,
+                address: address,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                isArchived: isArchived,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                required double latitude,
+                required double longitude,
+                required int radius,
+                Value<String?> address = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<bool> isArchived = const Value.absent(),
+              }) => SavedLocationsCompanion.insert(
+                id: id,
+                name: name,
+                latitude: latitude,
+                longitude: longitude,
+                radius: radius,
+                address: address,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                isArchived: isArchived,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SavedLocationsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SavedLocationsTable,
+      SavedLocation,
+      $$SavedLocationsTableFilterComposer,
+      $$SavedLocationsTableOrderingComposer,
+      $$SavedLocationsTableAnnotationComposer,
+      $$SavedLocationsTableCreateCompanionBuilder,
+      $$SavedLocationsTableUpdateCompanionBuilder,
+      (
+        SavedLocation,
+        BaseReferences<_$AppDatabase, $SavedLocationsTable, SavedLocation>,
+      ),
+      SavedLocation,
+      PrefetchHooks Function()
+    >;
+typedef $$ProfilesTableCreateCompanionBuilder =
+    ProfilesCompanion Function({
+      Value<int> id,
+      required String name,
+      Value<String?> description,
+      Value<bool> isEnabled,
+      Value<bool> allowStarredContacts,
+      Value<bool> allowRepeatCallers,
+      required int createdAt,
+      required int updatedAt,
+      Value<bool> isArchived,
+    });
+typedef $$ProfilesTableUpdateCompanionBuilder =
+    ProfilesCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<String?> description,
+      Value<bool> isEnabled,
+      Value<bool> allowStarredContacts,
+      Value<bool> allowRepeatCallers,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<bool> isArchived,
+    });
+
+class $$ProfilesTableFilterComposer
+    extends Composer<_$AppDatabase, $ProfilesTable> {
+  $$ProfilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isEnabled => $composableBuilder(
+    column: $table.isEnabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get allowStarredContacts => $composableBuilder(
+    column: $table.allowStarredContacts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get allowRepeatCallers => $composableBuilder(
+    column: $table.allowRepeatCallers,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ProfilesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ProfilesTable> {
+  $$ProfilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isEnabled => $composableBuilder(
+    column: $table.isEnabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get allowStarredContacts => $composableBuilder(
+    column: $table.allowStarredContacts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get allowRepeatCallers => $composableBuilder(
+    column: $table.allowRepeatCallers,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ProfilesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ProfilesTable> {
+  $$ProfilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isEnabled =>
+      $composableBuilder(column: $table.isEnabled, builder: (column) => column);
+
+  GeneratedColumn<bool> get allowStarredContacts => $composableBuilder(
+    column: $table.allowStarredContacts,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get allowRepeatCallers => $composableBuilder(
+    column: $table.allowRepeatCallers,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => column,
+  );
+}
+
+class $$ProfilesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ProfilesTable,
+          Profile,
+          $$ProfilesTableFilterComposer,
+          $$ProfilesTableOrderingComposer,
+          $$ProfilesTableAnnotationComposer,
+          $$ProfilesTableCreateCompanionBuilder,
+          $$ProfilesTableUpdateCompanionBuilder,
+          (Profile, BaseReferences<_$AppDatabase, $ProfilesTable, Profile>),
+          Profile,
+          PrefetchHooks Function()
+        > {
+  $$ProfilesTableTableManager(_$AppDatabase db, $ProfilesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ProfilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ProfilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ProfilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String?> description = const Value.absent(),
+                Value<bool> isEnabled = const Value.absent(),
+                Value<bool> allowStarredContacts = const Value.absent(),
+                Value<bool> allowRepeatCallers = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
+              }) => ProfilesCompanion(
+                id: id,
+                name: name,
+                description: description,
+                isEnabled: isEnabled,
+                allowStarredContacts: allowStarredContacts,
+                allowRepeatCallers: allowRepeatCallers,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                isArchived: isArchived,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                Value<String?> description = const Value.absent(),
+                Value<bool> isEnabled = const Value.absent(),
+                Value<bool> allowStarredContacts = const Value.absent(),
+                Value<bool> allowRepeatCallers = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<bool> isArchived = const Value.absent(),
+              }) => ProfilesCompanion.insert(
+                id: id,
+                name: name,
+                description: description,
+                isEnabled: isEnabled,
+                allowStarredContacts: allowStarredContacts,
+                allowRepeatCallers: allowRepeatCallers,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                isArchived: isArchived,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ProfilesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ProfilesTable,
+      Profile,
+      $$ProfilesTableFilterComposer,
+      $$ProfilesTableOrderingComposer,
+      $$ProfilesTableAnnotationComposer,
+      $$ProfilesTableCreateCompanionBuilder,
+      $$ProfilesTableUpdateCompanionBuilder,
+      (Profile, BaseReferences<_$AppDatabase, $ProfilesTable, Profile>),
+      Profile,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3469,4 +5820,8 @@ class $AppDatabaseManager {
         _db,
         _db.calendarBusyWindowsCache,
       );
+  $$SavedLocationsTableTableManager get savedLocations =>
+      $$SavedLocationsTableTableManager(_db, _db.savedLocations);
+  $$ProfilesTableTableManager get profiles =>
+      $$ProfilesTableTableManager(_db, _db.profiles);
 }

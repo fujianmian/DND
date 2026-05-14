@@ -3,6 +3,7 @@ import 'package:drift/drift.dart' as d;
 import '../database/database.dart';
 import 'rule.dart' as model;
 import 'rule_trigger_values.dart';
+import 'time_repeat.dart';
 
 class RuleTriggerDraft {
   static const time = 0;
@@ -15,9 +16,13 @@ class RuleTriggerDraft {
     required this.triggerType,
     this.startTime,
     this.endTime,
+    this.timeRepeatMode = timeRepeatEveryDay,
+    this.timeRepeatDaysMask = timeRepeatEveryDayMask,
     this.latitude,
     this.longitude,
     this.radius,
+    this.savedLocationId,
+    this.locationLabel,
     this.packageName,
     this.activityType,
     this.calendarId,
@@ -30,9 +35,13 @@ class RuleTriggerDraft {
   final int triggerType;
   final String? startTime;
   final String? endTime;
+  final int timeRepeatMode;
+  final int timeRepeatDaysMask;
   final double? latitude;
   final double? longitude;
   final double? radius;
+  final int? savedLocationId;
+  final String? locationLabel;
   final String? packageName;
   final String? activityType;
   final String? calendarId;
@@ -46,9 +55,13 @@ class RuleTriggerDraft {
       triggerType: trigger.triggerType,
       startTime: trigger.startTime,
       endTime: trigger.endTime,
+      timeRepeatMode: trigger.timeRepeatMode,
+      timeRepeatDaysMask: trigger.timeRepeatDaysMask,
       latitude: trigger.latitude,
       longitude: trigger.longitude,
       radius: trigger.radius,
+      savedLocationId: trigger.savedLocationId,
+      locationLabel: trigger.locationLabel,
       packageName: trigger.packageName,
       activityType: trigger.activityType,
       calendarId: trigger.calendarId,
@@ -64,20 +77,39 @@ class RuleTriggerDraft {
       triggerType: rule.type,
       startTime: rule.type == time ? rule.startTime : null,
       endTime: rule.type == time ? rule.endTime : null,
+      timeRepeatMode: rule.type == time
+          ? rule.timeRepeatMode
+          : timeRepeatEveryDay,
+      timeRepeatDaysMask: rule.type == time
+          ? rule.timeRepeatDaysMask
+          : timeRepeatEveryDayMask,
       latitude: rule.type == location ? rule.latitude : null,
       longitude: rule.type == location ? rule.longitude : null,
       radius: rule.type == location ? rule.radius?.toDouble() : null,
+      savedLocationId: rule.type == location ? rule.savedLocationId : null,
+      locationLabel: rule.type == location ? rule.locationLabel : null,
       packageName: rule.type == app ? rule.packageName : null,
       activityType: rule.type == activity ? rule.activityType : null,
     );
   }
 
   RuleTriggersCompanion toCompanion({int ruleId = 0}) {
+    final normalizedMode = normalizeTimeRepeatMode(timeRepeatMode);
+    final normalizedDaysMask = normalizeTimeRepeatDaysMask(
+      timeRepeatDaysMask,
+      repeatMode: normalizedMode,
+    );
     return RuleTriggersCompanion.insert(
       ruleId: ruleId,
       triggerType: triggerType,
       startTime: triggerType == time ? d.Value(startTime) : const d.Value(null),
       endTime: triggerType == time ? d.Value(endTime) : const d.Value(null),
+      timeRepeatMode: triggerType == time
+          ? d.Value(normalizedMode)
+          : const d.Value(timeRepeatEveryDay),
+      timeRepeatDaysMask: triggerType == time
+          ? d.Value(normalizedDaysMask)
+          : const d.Value(timeRepeatEveryDayMask),
       latitude: triggerType == location
           ? d.Value(latitude)
           : const d.Value(null),
@@ -85,6 +117,12 @@ class RuleTriggerDraft {
           ? d.Value(longitude)
           : const d.Value(null),
       radius: triggerType == location ? d.Value(radius) : const d.Value(null),
+      savedLocationId: triggerType == location
+          ? d.Value(savedLocationId)
+          : const d.Value(null),
+      locationLabel: triggerType == location
+          ? d.Value(_cleanText(locationLabel))
+          : const d.Value(null),
       packageName: triggerType == app
           ? d.Value(_cleanText(packageName))
           : const d.Value(null),
@@ -112,9 +150,13 @@ class RuleTriggerDraft {
       triggerType: _modelTriggerType(triggerType),
       startTime: startTime,
       endTime: endTime,
+      timeRepeatMode: timeRepeatMode,
+      timeRepeatDaysMask: timeRepeatDaysMask,
       latitude: latitude,
       longitude: longitude,
       radius: radius?.round(),
+      savedLocationId: savedLocationId,
+      locationLabel: locationLabel,
       packageName: _cleanText(packageName),
       activityType: _cleanText(activityType),
     );
@@ -130,9 +172,13 @@ RulesCompanion withFirstTriggerLegacyFields(
     type: d.Value(values.type),
     startTime: values.startTime,
     endTime: values.endTime,
+    timeRepeatMode: values.timeRepeatMode,
+    timeRepeatDaysMask: values.timeRepeatDaysMask,
     latitude: values.latitude,
     longitude: values.longitude,
     radius: values.radius,
+    savedLocationId: values.savedLocationId,
+    locationLabel: values.locationLabel,
     packageName: values.packageName,
     activityType: values.activityType,
   );
@@ -174,7 +220,19 @@ String? validateRuleTriggerDrafts({
         if (start == null || end == null) {
           return '$label: please select start and end times.';
         }
-        final key = '$start->$end';
+        final repeatMode = normalizeTimeRepeatMode(trigger.timeRepeatMode);
+        if (repeatMode != trigger.timeRepeatMode) {
+          return '$label: please choose a valid repeat setting.';
+        }
+        if (repeatMode == timeRepeatCustom &&
+            !isValidCustomDaysMask(trigger.timeRepeatDaysMask)) {
+          return '$label: please select at least one repeat day.';
+        }
+        final repeatDaysMask = normalizeTimeRepeatDaysMask(
+          trigger.timeRepeatDaysMask,
+          repeatMode: repeatMode,
+        );
+        final key = '$start->$end|$repeatMode|$repeatDaysMask';
         if (!timeRanges.add(key)) {
           return '$label duplicates an existing time range.';
         }

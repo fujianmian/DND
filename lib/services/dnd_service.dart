@@ -14,6 +14,16 @@ class KeywordBypassSettings {
   final List<String> packages;
 }
 
+class SelectedAppBypassSettings {
+  const SelectedAppBypassSettings({
+    required this.enabled,
+    required this.packages,
+  });
+
+  final bool enabled;
+  final List<String> packages;
+}
+
 class AutomationDndState {
   const AutomationDndState({
     required this.automationDndActive,
@@ -24,6 +34,52 @@ class AutomationDndState {
   final bool automationDndActive;
   final List<String> activeAutomationRuleNames;
   final DateTime? lastAutomationDndChangedAt;
+}
+
+class AutomationPauseState {
+  const AutomationPauseState({
+    required this.automationPaused,
+    required this.pauseUntilMillis,
+    required this.pausedAtMillis,
+    required this.pauseReason,
+  });
+
+  factory AutomationPauseState.fromPlatformMap(Map<dynamic, dynamic>? map) {
+    return AutomationPauseState(
+      automationPaused: map?['automationPaused'] as bool? ?? false,
+      pauseUntilMillis: _intValue(map?['pauseUntilMillis']),
+      pausedAtMillis: _intValue(map?['pausedAtMillis']),
+      pauseReason: map?['pauseReason']?.toString() ?? 'manual',
+    );
+  }
+
+  static int _intValue(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 0;
+  }
+
+  final bool automationPaused;
+  final int pauseUntilMillis;
+  final int pausedAtMillis;
+  final String pauseReason;
+
+  bool get isIndefinite => automationPaused && pauseUntilMillis <= 0;
+
+  bool get isExpired {
+    if (!automationPaused || pauseUntilMillis <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= pauseUntilMillis;
+  }
+
+  DateTime? get pauseUntil {
+    if (pauseUntilMillis <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(pauseUntilMillis);
+  }
+
+  DateTime? get pausedAt {
+    if (pausedAtMillis <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(pausedAtMillis);
+  }
 }
 
 class DndService {
@@ -163,6 +219,44 @@ class DndService {
     }
   }
 
+  static Future<SelectedAppBypassSettings>
+  getSelectedAppBypassSettings() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getSelectedAppBypassSettings',
+      );
+      return SelectedAppBypassSettings(
+        enabled: result?['enabled'] as bool? ?? false,
+        packages:
+            (result?['packages'] as List<dynamic>?)
+                ?.map((value) => value.toString())
+                .toList() ??
+            const [],
+      );
+    } on PlatformException catch (e) {
+      debugPrint(
+        "Failed to load selected app bypass settings: '${e.message}'.",
+      );
+      return const SelectedAppBypassSettings(enabled: false, packages: []);
+    }
+  }
+
+  static Future<void> saveSelectedAppBypassSettings({
+    required bool enabled,
+    required List<String> packages,
+  }) async {
+    try {
+      await platform.invokeMethod('saveSelectedAppBypassSettings', {
+        'enabled': enabled,
+        'packages': packages,
+      });
+    } on PlatformException catch (e) {
+      debugPrint(
+        "Failed to save selected app bypass settings: '${e.message}'.",
+      );
+    }
+  }
+
   static Future<void> enableDnd() async {
     try {
       await platform.invokeMethod('enableDnd');
@@ -258,6 +352,73 @@ class DndService {
     return null;
   }
 
+  static Future<AutomationPauseState> getAutomationPauseState() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getAutomationPauseState',
+      );
+      return AutomationPauseState.fromPlatformMap(result);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to load automation pause state: '${e.message}'.");
+    } catch (e) {
+      debugPrint("Failed to load automation pause state: '$e'.");
+    }
+    return const AutomationPauseState(
+      automationPaused: false,
+      pauseUntilMillis: 0,
+      pausedAtMillis: 0,
+      pauseReason: 'manual',
+    );
+  }
+
+  static Future<AutomationPauseState> pauseAutomation(
+    Duration? duration,
+  ) async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'pauseAutomation',
+        {'durationMillis': duration?.inMilliseconds},
+      );
+      return AutomationPauseState.fromPlatformMap(result);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to pause automation: '${e.message}'.");
+    } catch (e) {
+      debugPrint("Failed to pause automation: '$e'.");
+    }
+    return getAutomationPauseState();
+  }
+
+  static Future<AutomationPauseState> resumeAutomation() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'resumeAutomation',
+      );
+      return AutomationPauseState.fromPlatformMap(result);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to resume automation: '${e.message}'.");
+    } catch (e) {
+      debugPrint("Failed to resume automation: '$e'.");
+    }
+    return getAutomationPauseState();
+  }
+
+  static Future<Map<String, dynamic>> getAppDebugInfo() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getAppDebugInfo',
+      );
+      return Map<String, dynamic>.from(result ?? const {});
+    } on PlatformException catch (e) {
+      debugPrint(
+        "Failed to load app debug info: code='${e.code}', "
+        "message='${e.message}', details='${e.details}'.",
+      );
+      return <String, dynamic>{
+        'platformError': '${e.code}: ${e.message ?? 'unknown platform error'}',
+      };
+    }
+  }
+
   // --- Foreground Service Sync ---
   static Future<void> syncRulesToService(
     List<Map<String, dynamic>> timeRules,
@@ -276,6 +437,12 @@ class DndService {
           .toList();
       final endHours = timeRules.map((e) => e['endHour'] as int).toList();
       final endMinutes = timeRules.map((e) => e['endMinute'] as int).toList();
+      final timeRepeatModes = timeRules
+          .map((e) => e['timeRepeatMode'] as int? ?? 0)
+          .toList();
+      final timeRepeatDaysMasks = timeRules
+          .map((e) => e['timeRepeatDaysMask'] as int? ?? 127)
+          .toList();
       final timeAllowStarredContacts = timeRules
           .map((e) => e['allowStarredContacts'] as bool)
           .toList();
@@ -330,6 +497,8 @@ class DndService {
         'startMinutes': startMinutes,
         'endHours': endHours,
         'endMinutes': endMinutes,
+        'timeRepeatModes': timeRepeatModes,
+        'timeRepeatDaysMasks': timeRepeatDaysMasks,
         'timeAllowStarredContacts': timeAllowStarredContacts,
         'timeAllowRepeatCallers': timeAllowRepeatCallers,
         'locIds': locIds,

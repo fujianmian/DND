@@ -194,11 +194,15 @@ class _StatusScreenState extends State<StatusScreen> {
                     children: [
                       Text(
                         'Automation status',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: secondaryTextColor),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         isDndActive ? 'DND Automation Active' : 'Monitoring',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -213,6 +217,8 @@ class _StatusScreenState extends State<StatusScreen> {
             const SizedBox(height: 16),
             Text(
               statusBody,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 15, color: primaryTextColor),
             ),
             if (activeRuleNames.length > 1) ...[
@@ -224,6 +230,8 @@ class _StatusScreenState extends State<StatusScreen> {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
                     '- $name',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: primaryTextColor),
                   ),
                 ),
@@ -258,9 +266,19 @@ class _StatusScreenState extends State<StatusScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: primaryTextColor)),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: primaryTextColor),
+                  ),
                   const SizedBox(height: 4),
-                  Text(body, style: TextStyle(color: secondaryTextColor)),
+                  Text(
+                    body,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: secondaryTextColor),
+                  ),
                 ],
               ),
             ),
