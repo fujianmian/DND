@@ -169,8 +169,111 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _setKeywordBypassEnabled(bool value) async {
+    if (value) {
+      final canEnable = await _confirmAlertBypassSetup('Keyword bypass');
+      if (!canEnable) return;
+    }
     setState(() => _keywordBypassEnabled = value);
     await _saveKeywordBypassSettings();
+    if (value && mounted) {
+      await _showKeywordBypassChannelReminder();
+    }
+  }
+
+  Future<bool> _confirmAlertBypassSetup(String featureName) async {
+    final permissions = await _readPermissionStates();
+    if (!mounted) return false;
+    setState(() => _applyPermissionStates(permissions));
+
+    final missing = <String>[];
+    if (!permissions.notificationListenerEnabled) {
+      missing.add('Notification access');
+    }
+    if (!permissions.notificationPermissionGranted) {
+      missing.add('Notifications');
+    }
+    if (!permissions.dndAccessGranted) {
+      missing.add('DND access');
+    }
+
+    if (missing.isEmpty) return true;
+
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('$featureName setup'),
+          content: Text(
+            '$featureName needs ${missing.join(', ')} before it can reliably alert during automation DND.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (openSettings != true || !mounted) return false;
+
+    if (!permissions.notificationListenerEnabled) {
+      await _openNotificationAccessSettings();
+    } else if (!permissions.notificationPermissionGranted) {
+      await _requestNotificationPermission();
+    } else if (!permissions.dndAccessGranted) {
+      await _openDndAccessSettings();
+    }
+    return false;
+  }
+
+  Future<void> _showKeywordBypassChannelReminder() async {
+    final channelStatus = await DndService.getEmergencyAlertChannelStatus();
+    if (!mounted || channelStatus.canBypassDnd) return;
+
+    await _showAlertChannelReminder(
+      'To let Quietly emergency alerts make sound during DND, open Android notification settings and enable sound / Allow in Do Not Disturb for Quietly emergency alerts.',
+    );
+  }
+
+  Future<void> _showPriorityAppAlertChannelReminder() async {
+    final channelStatus = await DndService.getPriorityAppAlertChannelStatus();
+    if (!mounted || channelStatus.canBypassDnd) return;
+
+    await _showAlertChannelReminder(
+      'To let Quietly priority app alerts make sound during DND, open Android notification settings and enable sound / Allow in Do Not Disturb for Quietly priority app alerts.',
+    );
+  }
+
+  Future<void> _showAlertChannelReminder(String message) async {
+    final openNotificationSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Allow alerts in DND'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Open notifications'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (openNotificationSettings == true && mounted) {
+      await DndService.openAppNotificationSettings();
+    }
   }
 
   Future<void> _addKeyword() async {
@@ -223,8 +326,15 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _setPriorityAppAlertsEnabled(bool value) async {
+    if (value) {
+      final canEnable = await _confirmAlertBypassSetup('Priority app alerts');
+      if (!canEnable) return;
+    }
     setState(() => _priorityAppAlertsEnabled = value);
     await _savePriorityAppAlertSettings();
+    if (value && mounted) {
+      await _showPriorityAppAlertChannelReminder();
+    }
   }
 
   Future<void> _togglePriorityAppPackage(
@@ -434,8 +544,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildPrivacyHeader(),
-        const SizedBox(height: AppTheme.sectionGap),
         _settingsHubCard(
           icon: Icons.verified_user_outlined,
           title: 'Permissions',
@@ -562,7 +670,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _activityRecognitionPermissionGranted,
     ].where((granted) => granted).length;
     if (grantedCount == 7) return '7/7 granted';
-    return '$grantedCount/7 granted';
+    return 'Some permissions missing';
   }
 
   String _calendarSummary() {
@@ -597,41 +705,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (count == 0) return 'None saved';
     if (count == 1) return '1 saved location';
     return '$count saved locations';
-  }
-
-  Widget _buildPrivacyHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(
-          'Privacy note',
-          'Quietly keeps automation settings on this device.',
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(AppTheme.cardPadding),
-          decoration: BoxDecoration(
-            color: AppTheme.logoBlue.withValues(alpha: 0.1),
-            borderRadius: AppTheme.cardBorderRadius,
-            border: Border.all(color: AppTheme.logoBlue.withValues(alpha: 0.2)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.lock_outline, color: AppTheme.logoBlue),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  'Rules, keywords, monitored apps, and priority apps are stored locally. Notification text is checked on this device only.',
-                  style: TextStyle(
-                    color: AppTheme.pureBlack.withValues(alpha: 0.72),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 
   Widget _buildPermissionsSection() {
@@ -1386,31 +1459,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
         const SizedBox(height: 8),
         Card(
-          child: Column(
-            children: [
-              SwitchListTile(
-                title: const Text('Emergency keyword bypass'),
-                subtitle: const Text(
-                  'Detect selected keywords from monitored app notifications while automation DND is active.',
-                ),
-                value: _keywordBypassEnabled,
-                onChanged: _isSaving ? null : _setKeywordBypassEnabled,
-              ),
-              Divider(
-                height: 1,
-                color: AppTheme.pureBlack.withValues(alpha: 0.1),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(AppTheme.cardPadding),
-                child: Text(
-                  'Notification text is checked locally. Message content is not stored or uploaded.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.pureBlack.withValues(alpha: 0.65),
-                  ),
-                ),
-              ),
-            ],
+          child: SwitchListTile(
+            title: const Text('Emergency keyword bypass'),
+            subtitle: const Text(
+              'Detect selected keywords from monitored app notifications while automation DND is active.',
+            ),
+            value: _keywordBypassEnabled,
+            onChanged: _isSaving ? null : _setKeywordBypassEnabled,
           ),
         ),
         const SizedBox(height: 16),
@@ -1431,31 +1486,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
         const SizedBox(height: 8),
         Card(
-          child: Column(
-            children: [
-              SwitchListTile(
-                title: const Text('Priority app alerts'),
-                subtitle: const Text(
-                  'Post a Quietly alert when selected apps notify during automation DND.',
-                ),
-                value: _priorityAppAlertsEnabled,
-                onChanged: _isSaving ? null : _setPriorityAppAlertsEnabled,
-              ),
-              Divider(
-                height: 1,
-                color: AppTheme.pureBlack.withValues(alpha: 0.1),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(AppTheme.cardPadding),
-                child: Text(
-                  'Quietly does not change the original app notification or turn DND off.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.pureBlack.withValues(alpha: 0.65),
-                  ),
-                ),
-              ),
-            ],
+          child: SwitchListTile(
+            title: const Text('Priority app alerts'),
+            subtitle: const Text(
+              'Post a Quietly alert when selected apps notify during automation DND.',
+            ),
+            value: _priorityAppAlertsEnabled,
+            onChanged: _isSaving ? null : _setPriorityAppAlertsEnabled,
           ),
         ),
         if (!_notificationListenerEnabled) ...[

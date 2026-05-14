@@ -82,6 +82,38 @@ class AutomationPauseState {
   }
 }
 
+class AlertChannelStatus {
+  const AlertChannelStatus({
+    required this.channelId,
+    required this.channelExists,
+    required this.canBypassDnd,
+    required this.importance,
+    required this.soundConfigured,
+    required this.policyAccessGranted,
+    required this.notificationsGranted,
+  });
+
+  factory AlertChannelStatus.fromPlatformMap(Map<dynamic, dynamic>? map) {
+    return AlertChannelStatus(
+      channelId: map?['channelId']?.toString() ?? '',
+      channelExists: map?['channelExists'] as bool? ?? false,
+      canBypassDnd: map?['canBypassDnd'] as bool? ?? false,
+      importance: AutomationPauseState._intValue(map?['importance']),
+      soundConfigured: map?['soundConfigured'] as bool? ?? false,
+      policyAccessGranted: map?['policyAccessGranted'] as bool? ?? false,
+      notificationsGranted: map?['notificationsGranted'] as bool? ?? false,
+    );
+  }
+
+  final String channelId;
+  final bool channelExists;
+  final bool canBypassDnd;
+  final int importance;
+  final bool soundConfigured;
+  final bool policyAccessGranted;
+  final bool notificationsGranted;
+}
+
 class DndService {
   static const platform = MethodChannel('com.example.dnd_auto_app/dnd');
 
@@ -139,6 +171,59 @@ class DndService {
     final status = await Permission.notification.request();
     if (status.isPermanentlyDenied) {
       await openAppSettings();
+    }
+  }
+
+  static Future<void> openAppNotificationSettings() async {
+    try {
+      await platform.invokeMethod('openAppNotificationSettings');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to open app notification settings: '${e.message}'.");
+      await openAppSettings();
+    }
+  }
+
+  static Future<AlertChannelStatus> getEmergencyAlertChannelStatus() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getEmergencyAlertChannelStatus',
+      );
+      return AlertChannelStatus.fromPlatformMap(result);
+    } on PlatformException catch (e) {
+      debugPrint(
+        "Failed to read emergency alert channel status: '${e.message}'.",
+      );
+      return const AlertChannelStatus(
+        channelId: '',
+        channelExists: false,
+        canBypassDnd: false,
+        importance: 0,
+        soundConfigured: false,
+        policyAccessGranted: false,
+        notificationsGranted: false,
+      );
+    }
+  }
+
+  static Future<AlertChannelStatus> getPriorityAppAlertChannelStatus() async {
+    try {
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'getPriorityAppAlertChannelStatus',
+      );
+      return AlertChannelStatus.fromPlatformMap(result);
+    } on PlatformException catch (e) {
+      debugPrint(
+        "Failed to read priority app alert channel status: '${e.message}'.",
+      );
+      return const AlertChannelStatus(
+        channelId: '',
+        channelExists: false,
+        canBypassDnd: false,
+        importance: 0,
+        soundConfigured: false,
+        policyAccessGranted: false,
+        notificationsGranted: false,
+      );
     }
   }
 

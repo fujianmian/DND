@@ -55,6 +55,10 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
 
     private fun handleKeywordBypass(sbn: StatusBarNotification): Boolean {
         val settings = KeywordBypassSettingsStore.read(this)
+        Log.d(
+            TAG,
+            "Keyword bypass debug settings: package=${sbn.packageName}, enabled=${settings.enabled}, keywordCount=${settings.keywords.size}, keywords=${settings.keywords.joinToString("|")}, monitoredPackageCount=${settings.packages.size}, monitoredPackages=${settings.packages.joinToString("|")}, notificationId=${sbn.id}, key=${sbn.key}, postTime=${sbn.postTime}, isOngoing=${sbn.isOngoing}, isGroupSummary=${isGroupSummary(sbn.notification)}, category=${sbn.notification.category ?: "none"}, extrasKeys=${notificationExtraKeys(sbn.notification)}"
+        )
         if (!settings.enabled) {
             Log.d(TAG, "Keyword bypass skipped: setting disabled. package=${sbn.packageName}")
             return false
@@ -69,17 +73,31 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         }
         Log.d(TAG, "Keyword bypass package monitored. package=${sbn.packageName}, monitoredPackageCount=${settings.packages.size}")
 
-        val extractedText = extractNotificationText(sbn.notification)
-        if (extractedText.isBlank()) {
-            Log.d(TAG, "Keyword bypass skipped: no readable notification text. package=${sbn.packageName}")
+        val extractedText = extractKeywordSearchText(sbn)
+        Log.d(
+            TAG,
+            "Keyword bypass debug extracted: package=${sbn.packageName}, searchedNotifications=${extractedText.notificationCount}, textPartCount=${extractedText.partCount}, textLength=${extractedText.text.length}"
+        )
+        if (extractedText.text.isBlank()) {
+            Log.d(
+                TAG,
+                "Keyword bypass skipped: no readable notification text. package=${sbn.packageName}, searchedNotifications=${extractedText.notificationCount}, textPartCount=${extractedText.partCount}"
+            )
             return false
         }
 
-        val normalizedText = normalizeText(extractedText)
+        val normalizedText = normalizeText(extractedText.text)
+        Log.d(
+            TAG,
+            "Keyword bypass debug normalized: package=${sbn.packageName}, normalizedLength=${normalizedText.length}, keywordCount=${settings.keywords.size}"
+        )
         val matchedKeyword = settings.keywords.firstOrNull { keyword ->
             normalizedText.contains(keyword.lowercase(Locale.ROOT))
         } ?: run {
-            Log.d(TAG, "Keyword bypass skipped: no keyword matched. package=${sbn.packageName}, keywordCount=${settings.keywords.size}")
+            Log.d(
+                TAG,
+                "Keyword bypass skipped: no keyword matched. package=${sbn.packageName}, keywordCount=${settings.keywords.size}, searchedNotifications=${extractedText.notificationCount}, textPartCount=${extractedText.partCount}"
+            )
             return false
         }
 
@@ -156,18 +174,19 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "EmergencyBypass"
-        private const val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts"
+        private const val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts_v3"
         private const val EMERGENCY_CHANNEL_NAME = "Quietly emergency alerts"
         private const val PRIORITY_APP_CHANNEL_ID = "quietly_priority_app_alerts_v2"
         private const val PRIORITY_APP_CHANNEL_NAME = "Quietly priority app alerts"
-        private const val COOLDOWN_MS = 2 * 60 * 1000L
-        private const val PRIORITY_PACKAGE_COOLDOWN_MS = 30 * 1000L
+        private const val COOLDOWN_MS = 0L
+        private const val PRIORITY_PACKAGE_COOLDOWN_MS = 0L
         private val recentNotificationKeyMatches = mutableMapOf<String, Long>()
         private val recentContentMatches = mutableMapOf<String, Long>()
         private val recentPriorityNotificationKeyAlerts = mutableMapOf<String, Long>()
         private val recentPriorityPackageAlerts = mutableMapOf<String, Long>()
 
         private fun isDuplicateSuppressed(notificationKey: String, contentIdentity: String): Boolean {
+            if (COOLDOWN_MS <= 0L) return false
             val now = System.currentTimeMillis()
             pruneExpired(now)
             val lastKeyMatch = recentNotificationKeyMatches[notificationKey]
@@ -178,6 +197,7 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         }
 
         private fun rememberMatch(notificationKey: String, contentIdentity: String) {
+            if (COOLDOWN_MS <= 0L) return
             val now = System.currentTimeMillis()
             pruneExpired(now)
             recentNotificationKeyMatches[notificationKey] = now
@@ -193,14 +213,20 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
             sourceIdentity: String,
             packageName: String
         ): String? {
+            if (COOLDOWN_MS <= 0L && PRIORITY_PACKAGE_COOLDOWN_MS <= 0L) return null
             val now = System.currentTimeMillis()
             prunePriorityAppExpired(now)
             val lastSourceAlert = recentPriorityNotificationKeyAlerts[sourceIdentity]
-            if (lastSourceAlert != null && now - lastSourceAlert < COOLDOWN_MS) {
+            if (
+                COOLDOWN_MS > 0L &&
+                lastSourceAlert != null &&
+                now - lastSourceAlert < COOLDOWN_MS
+            ) {
                 return "same notification key/postTime cooldown (${now - lastSourceAlert}ms elapsed, ${COOLDOWN_MS}ms required)"
             }
             val lastPackageAlert = recentPriorityPackageAlerts[packageName]
             if (
+                PRIORITY_PACKAGE_COOLDOWN_MS > 0L &&
                 lastPackageAlert != null &&
                 now - lastPackageAlert < PRIORITY_PACKAGE_COOLDOWN_MS
             ) {
@@ -210,10 +236,15 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         }
 
         private fun rememberPriorityAppAlert(sourceIdentity: String, packageName: String) {
+            if (COOLDOWN_MS <= 0L && PRIORITY_PACKAGE_COOLDOWN_MS <= 0L) return
             val now = System.currentTimeMillis()
             prunePriorityAppExpired(now)
-            recentPriorityNotificationKeyAlerts[sourceIdentity] = now
-            recentPriorityPackageAlerts[packageName] = now
+            if (COOLDOWN_MS > 0L) {
+                recentPriorityNotificationKeyAlerts[sourceIdentity] = now
+            }
+            if (PRIORITY_PACKAGE_COOLDOWN_MS > 0L) {
+                recentPriorityPackageAlerts[packageName] = now
+            }
         }
 
         private fun prunePriorityAppExpired(now: Long) {
@@ -286,10 +317,14 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
 
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         try {
+            Log.d(
+                TAG,
+                "Emergency alert channel before create: id=$EMERGENCY_CHANNEL_ID, exists=${notificationManager.getNotificationChannelCompat(EMERGENCY_CHANNEL_ID) != null}, policyAccessGranted=${notificationManager.isNotificationPolicyAccessGranted}, requestedSound=$soundUri"
+            )
             val channel = NotificationChannel(
                 EMERGENCY_CHANNEL_ID,
                 EMERGENCY_CHANNEL_NAME,
@@ -308,12 +343,21 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
                 }
             }
 
+            Log.d(TAG, "Emergency alert channel create call starting: id=$EMERGENCY_CHANNEL_ID")
             notificationManager.createNotificationChannel(channel)
+            Log.d(TAG, "Emergency alert channel create call returned: id=$EMERGENCY_CHANNEL_ID")
             val createdChannel = notificationManager.getNotificationChannel(EMERGENCY_CHANNEL_ID)
+            val createdCanBypassDnd = createdChannel?.canBypassDnd() ?: false
             Log.d(
                 TAG,
-                "Emergency alert channel created: id=$EMERGENCY_CHANNEL_ID, importance=${createdChannel?.importance ?: channel.importance}, canBypassDnd=${createdChannel?.canBypassDnd() ?: false}"
+                "Emergency alert channel lookup after create: id=$EMERGENCY_CHANNEL_ID, found=${createdChannel != null}, importance=${createdChannel?.importance ?: channel.importance}, canBypassDnd=$createdCanBypassDnd, sound=${createdChannel?.sound ?: soundUri}, policyAccessGranted=${notificationManager.isNotificationPolicyAccessGranted}"
             )
+            if (notificationManager.isNotificationPolicyAccessGranted && !createdCanBypassDnd) {
+                Log.w(
+                    TAG,
+                    "Emergency alert channel cannot bypass DND even though policy access is granted. Android/OEM channel settings are blocking DND bypass; enable bypass/sound manually for channel=$EMERGENCY_CHANNEL_ID."
+                )
+            }
         } catch (e: SecurityException) {
             Log.e(TAG, "Failed to create emergency alert channel: ${e.message}")
         } catch (e: RuntimeException) {
@@ -440,12 +484,18 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
     }
 
     private fun emergencyNotificationId(sbn: StatusBarNotification): Int {
-        return 7000 + (sbn.packageName.hashCode() and Int.MAX_VALUE) % 1000
+        val identity = "${sbn.packageName}:${sbn.id}:${sbn.postTime}:${System.currentTimeMillis()}"
+        return 7000 + (identity.hashCode() and Int.MAX_VALUE) % 100000
     }
 
     private fun priorityAppNotificationId(sbn: StatusBarNotification): Int {
-        val alertBucket = System.currentTimeMillis() / PRIORITY_PACKAGE_COOLDOWN_MS
-        val identity = "${sbn.packageName}:$alertBucket"
+        val now = System.currentTimeMillis()
+        val alertBucket = if (PRIORITY_PACKAGE_COOLDOWN_MS > 0L) {
+            now / PRIORITY_PACKAGE_COOLDOWN_MS
+        } else {
+            now
+        }
+        val identity = "${sbn.packageName}:${sbn.id}:${sbn.postTime}:$alertBucket"
         return 8000 + (identity.hashCode() and Int.MAX_VALUE) % 100000
     }
 
@@ -495,17 +545,97 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         }
     }
 
+    private data class ExtractedNotificationText(
+        val text: String,
+        val notificationCount: Int,
+        val partCount: Int
+    )
+
+    private fun extractKeywordSearchText(sbn: StatusBarNotification): ExtractedNotificationText {
+        val notifications = linkedMapOf<String, StatusBarNotification>()
+        notifications[sbn.key] = sbn
+
+        try {
+            activeNotifications
+                ?.filter { it.packageName == sbn.packageName }
+                ?.forEach { notifications[it.key] = it }
+            Log.d(
+                TAG,
+                "Keyword bypass debug active notifications: package=${sbn.packageName}, candidateCount=${notifications.size}, candidates=${notifications.values.joinToString("|") { "id=${it.id},key=${it.key},postTime=${it.postTime},groupSummary=${isGroupSummary(it.notification)},ongoing=${it.isOngoing},extras=${notificationExtraKeys(it.notification)}" }}"
+            )
+        } catch (e: SecurityException) {
+            Log.d(TAG, "Keyword bypass active notification scan unavailable: ${e.message}")
+        } catch (e: RuntimeException) {
+            Log.d(TAG, "Keyword bypass active notification scan failed: ${e.message}")
+        }
+
+        val textParts = extractNotificationMatchTextParts(sbn.notification).ifEmpty {
+            notifications.values
+                .filter { it.postTime >= sbn.postTime }
+                .flatMap { entry -> extractNotificationMatchTextParts(entry.notification) }
+                .distinct()
+        }
+
+        return ExtractedNotificationText(
+            text = textParts.joinToString(" "),
+            notificationCount = notifications.size,
+            partCount = textParts.size
+        )
+    }
+
+    private fun notificationExtraKeys(notification: Notification): String {
+        return notification.extras
+            ?.keySet()
+            ?.sorted()
+            ?.joinToString(",")
+            ?: "none"
+    }
+
     private fun extractNotificationText(notification: Notification): String {
-        val extras = notification.extras ?: return ""
+        return extractNotificationTextParts(notification).joinToString(" ")
+    }
+
+    private fun extractNotificationMatchTextParts(notification: Notification): List<String> {
+        val extras = notification.extras ?: return emptyList()
+        latestMessagingStyleMessageText(extras)?.let { return listOf(it) }
+
+        val textParts = mutableListOf<String>()
+        addCharSequenceExtra(textParts, extras, Notification.EXTRA_TEXT)
+        addCharSequenceExtra(textParts, extras, Notification.EXTRA_BIG_TEXT)
+        addLatestTextLine(textParts, extras)
+
+        return textParts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    }
+
+    private fun extractNotificationTextParts(notification: Notification): List<String> {
+        val extras = notification.extras ?: return emptyList()
         val textParts = mutableListOf<String>()
 
         addCharSequenceExtra(textParts, extras, Notification.EXTRA_TITLE)
+        addCharSequenceExtra(textParts, extras, Notification.EXTRA_TITLE_BIG)
         addCharSequenceExtra(textParts, extras, Notification.EXTRA_TEXT)
         addCharSequenceExtra(textParts, extras, Notification.EXTRA_BIG_TEXT)
+        addCharSequenceExtra(textParts, extras, Notification.EXTRA_SUB_TEXT)
+        addCharSequenceExtra(textParts, extras, Notification.EXTRA_INFO_TEXT)
+        addCharSequenceExtra(textParts, extras, Notification.EXTRA_SUMMARY_TEXT)
         addTextLines(textParts, extras)
         addMessagingStyleText(textParts, extras)
+        addGenericBundleText(textParts, extras)
 
-        return textParts.joinToString(" ")
+        return textParts.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun latestMessagingStyleMessageText(extras: Bundle): String? {
+        val messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return null
+        val latestMessage = messages
+            .mapNotNull { it as? Bundle }
+            .maxByOrNull { message -> runCatching { message.getLong("time", 0L) }.getOrDefault(0L) }
+            ?: return null
+
+        return runCatching { latestMessage.getCharSequence("text")?.toString()?.trim() }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
     }
 
     private fun addCharSequenceExtra(
@@ -515,6 +645,13 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
     ) {
         extras.getCharSequence(key)?.toString()?.let {
             if (it.isNotBlank()) textParts.add(it)
+        }
+    }
+
+    private fun addLatestTextLine(textParts: MutableList<String>, extras: Bundle) {
+        val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES) ?: return
+        lines.lastOrNull { line -> !line.isNullOrBlank() }?.toString()?.let {
+            textParts.add(it)
         }
     }
 
@@ -531,8 +668,34 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         val messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return
         messages.forEach { message ->
             val messageBundle = message as? Bundle ?: return@forEach
-            messageBundle.getCharSequence("text")?.toString()?.let {
-                if (it.isNotBlank()) textParts.add(it)
+            addCharSequenceExtra(textParts, messageBundle, "text")
+            addCharSequenceExtra(textParts, messageBundle, "sender")
+        }
+    }
+
+    private fun addGenericBundleText(textParts: MutableList<String>, extras: Bundle) {
+        extras.keySet().forEach { key ->
+            val value = runCatching { extras.get(key) }.getOrNull() ?: return@forEach
+            addGenericTextValue(textParts, value)
+        }
+    }
+
+    private fun addGenericTextValue(textParts: MutableList<String>, value: Any) {
+        when (value) {
+            is CharSequence -> {
+                val text = value.toString()
+                if (text.isNotBlank()) textParts.add(text)
+            }
+            is Array<*> -> value.forEach { item ->
+                if (item != null) addGenericTextValue(textParts, item)
+            }
+            is Iterable<*> -> value.forEach { item ->
+                if (item != null) addGenericTextValue(textParts, item)
+            }
+            is Bundle -> {
+                addCharSequenceExtra(textParts, value, "text")
+                addCharSequenceExtra(textParts, value, "title")
+                addCharSequenceExtra(textParts, value, "sender")
             }
         }
     }

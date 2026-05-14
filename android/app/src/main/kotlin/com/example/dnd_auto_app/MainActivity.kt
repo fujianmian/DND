@@ -2,11 +2,14 @@ package com.example.dnd_auto_app
 
 import android.app.AppOpsManager
 import android.Manifest
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -29,6 +32,10 @@ class MainActivity: FlutterActivity() {
     private val KEYWORD_BYPASS_ENABLED = "keywordBypassEnabled"
     private val KEYWORD_BYPASS_KEYWORDS = "keywordBypassKeywords"
     private val KEYWORD_BYPASS_PACKAGES = "keywordBypassPackages"
+    private val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts_v3"
+    private val EMERGENCY_CHANNEL_NAME = "Quietly emergency alerts"
+    private val PRIORITY_APP_CHANNEL_ID = "quietly_priority_app_alerts_v2"
+    private val PRIORITY_APP_CHANNEL_NAME = "Quietly priority app alerts"
 
     private fun isNotificationListenerEnabled(): Boolean {
         val enabledListeners = Settings.Secure.getString(
@@ -177,6 +184,86 @@ class MainActivity: FlutterActivity() {
             .apply()
     }
 
+    private fun getEmergencyAlertChannelStatus(): Map<String, Any> {
+        return getAlertChannelStatus(
+            channelId = EMERGENCY_CHANNEL_ID,
+            channelName = EMERGENCY_CHANNEL_NAME,
+            channelDescription = "Alerts when monitored notifications contain emergency keywords"
+        )
+    }
+
+    private fun getPriorityAppAlertChannelStatus(): Map<String, Any> {
+        return getAlertChannelStatus(
+            channelId = PRIORITY_APP_CHANNEL_ID,
+            channelName = PRIORITY_APP_CHANNEL_NAME,
+            channelDescription = "Alerts when selected apps notify during automation DND"
+        )
+    }
+
+    private fun getAlertChannelStatus(
+        channelId: String,
+        channelName: String,
+        channelDescription: String
+    ): Map<String, Any> {
+        val notificationManager =
+            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationsGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return mapOf(
+                "channelId" to channelId,
+                "channelExists" to true,
+                "canBypassDnd" to notificationManager.isNotificationPolicyAccessGranted,
+                "importance" to NotificationManager.IMPORTANCE_HIGH,
+                "soundConfigured" to true,
+                "policyAccessGranted" to notificationManager.isNotificationPolicyAccessGranted,
+                "notificationsGranted" to notificationsGranted
+            )
+        }
+
+        ensureAlertChannel(notificationManager, channelId, channelName, channelDescription)
+        val channel = notificationManager.getNotificationChannel(channelId)
+        return mapOf(
+            "channelId" to channelId,
+            "channelExists" to (channel != null),
+            "canBypassDnd" to (channel?.canBypassDnd() ?: false),
+            "importance" to (channel?.importance ?: NotificationManager.IMPORTANCE_NONE),
+            "soundConfigured" to (channel?.sound != null),
+            "policyAccessGranted" to notificationManager.isNotificationPolicyAccessGranted,
+            "notificationsGranted" to notificationsGranted
+        )
+    }
+
+    private fun ensureAlertChannel(
+        notificationManager: NotificationManager,
+        channelId: String,
+        channelName: String,
+        channelDescription: String
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val channel = NotificationChannel(
+            channelId,
+            channelName,
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = channelDescription
+            setSound(soundUri, audioAttributes)
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 250, 150, 250, 150, 350)
+            if (notificationManager.isNotificationPolicyAccessGranted) {
+                setBypassDnd(true)
+            }
+        }
+        notificationManager.createNotificationChannel(channel)
+    }
+
     private fun getSelectedAppBypassSettings(): Map<String, Any> {
         val settings = SelectedAppBypassSettingsStore.read(this)
         return mapOf(
@@ -256,6 +343,25 @@ class MainActivity: FlutterActivity() {
                     val isGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                         checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                     result.success(isGranted)
+                }
+                "openAppNotificationSettings" -> {
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        }
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.parse("package:$packageName")
+                        }
+                    }
+                    startActivity(intent)
+                    result.success(null)
+                }
+                "getEmergencyAlertChannelStatus" -> {
+                    result.success(getEmergencyAlertChannelStatus())
+                }
+                "getPriorityAppAlertChannelStatus" -> {
+                    result.success(getPriorityAppAlertChannelStatus())
                 }
                 "getKeywordBypassSettings" -> {
                     result.success(getKeywordBypassSettings())
