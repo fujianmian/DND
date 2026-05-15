@@ -174,7 +174,7 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "EmergencyBypass"
-        private const val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts_v3"
+        private const val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts_v4"
         private const val EMERGENCY_CHANNEL_NAME = "Quietly emergency alerts"
         private const val PRIORITY_APP_CHANNEL_ID = "quietly_priority_app_alerts_v2"
         private const val PRIORITY_APP_CHANNEL_NAME = "Quietly priority app alerts"
@@ -278,6 +278,8 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
             openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val notificationId = emergencyNotificationId(sbn)
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
         val notification = NotificationCompat.Builder(this, EMERGENCY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_quietly_notification)
@@ -290,7 +292,11 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setSound(soundUri)
             .setVibrate(longArrayOf(0, 400, 200, 400))
+            .setOnlyAlertOnce(false)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis())
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
@@ -298,12 +304,12 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
         try {
             Log.d(
                 TAG,
-                "Posting Quietly emergency alert: at=${System.currentTimeMillis()}, package=${sbn.packageName}, notificationId=${emergencyNotificationId(sbn)}, DND filter before notify=${notificationManager.currentInterruptionFilter}"
+                "Posting Quietly emergency alert: at=${System.currentTimeMillis()}, package=${sbn.packageName}, notificationId=$notificationId, channelId=$EMERGENCY_CHANNEL_ID, soundUri=$soundUri, DND filter before notify=${notificationManager.currentInterruptionFilter}"
             )
-            notificationManager.notify(emergencyNotificationId(sbn), notification)
+            notificationManager.notify(notificationId, notification)
             Log.d(
                 TAG,
-                "Emergency alert notify call completed: at=${System.currentTimeMillis()}, package=${sbn.packageName}, id=${sbn.id}, key=${sbn.key}, DND filter after notify=${notificationManager.currentInterruptionFilter}"
+                "Emergency alert notify call completed: at=${System.currentTimeMillis()}, package=${sbn.packageName}, id=${sbn.id}, key=${sbn.key}, notificationId=$notificationId, DND filter after notify=${notificationManager.currentInterruptionFilter}"
             )
         } catch (e: SecurityException) {
             Log.e(TAG, "Failed to post emergency alert due to missing permission: ${e.message}")
@@ -317,7 +323,7 @@ class EmergencyNotificationListenerService : NotificationListenerService() {
 
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         try {

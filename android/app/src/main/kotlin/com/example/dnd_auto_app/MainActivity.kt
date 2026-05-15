@@ -32,7 +32,7 @@ class MainActivity: FlutterActivity() {
     private val KEYWORD_BYPASS_ENABLED = "keywordBypassEnabled"
     private val KEYWORD_BYPASS_KEYWORDS = "keywordBypassKeywords"
     private val KEYWORD_BYPASS_PACKAGES = "keywordBypassPackages"
-    private val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts_v3"
+    private val EMERGENCY_CHANNEL_ID = "quietly_emergency_alerts_v4"
     private val EMERGENCY_CHANNEL_NAME = "Quietly emergency alerts"
     private val PRIORITY_APP_CHANNEL_ID = "quietly_priority_app_alerts_v2"
     private val PRIORITY_APP_CHANNEL_NAME = "Quietly priority app alerts"
@@ -245,7 +245,7 @@ class MainActivity: FlutterActivity() {
 
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         val channel = NotificationChannel(
