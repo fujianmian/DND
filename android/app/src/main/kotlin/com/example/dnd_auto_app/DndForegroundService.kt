@@ -90,6 +90,7 @@ data class DndActivityRule(
     val id: String,
     val name: String,
     val activityType: String,
+    val confidenceThreshold: Int,
     val allowStarredContacts: Boolean,
     val allowRepeatCallers: Boolean
 )
@@ -119,7 +120,8 @@ data class AutomationTrigger(
     val longitude: Double?,
     val radius: Int?,
     val packageName: String?,
-    val activityType: String?
+    val activityType: String?,
+    val activityConfidenceThreshold: Int
 )
 
 data class CalendarBusyWindow(
@@ -160,6 +162,8 @@ class DndForegroundService : Service() {
     private var lastMatchedAppPackage: String? = null
     private var lastMatchedAppAtMillis: Long = 0L
     private var lastLocationRefreshRequestedAtMillis: Long = 0L
+    private var lastActivityRecognitionRegisterRequestedAtMillis: Long = 0L
+    private var activityRecognitionShouldMonitor: Boolean = false
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     
@@ -320,17 +324,27 @@ class DndForegroundService : Service() {
         val activityRuleNames = ruleIntent?.getStringArrayExtra("activityRuleNames") ?: emptyArray()
         val activityAllowStarredContacts = ruleIntent?.getBooleanArrayExtra("activityAllowStarredContacts") ?: booleanArrayOf()
         val activityAllowRepeatCallers = ruleIntent?.getBooleanArrayExtra("activityAllowRepeatCallers") ?: booleanArrayOf()
+        val activityConfidenceThresholds = ruleIntent?.getIntArrayExtra("activityConfidenceThresholds") ?: intArrayOf()
         targetActivityRules = targetActivityTypes.indices.map { i ->
             DndActivityRule(
                 stringAt(activityRuleIds, i, i.toString()),
                 stringAt(activityRuleNames, i, "Activity rule ${i + 1}"),
                 targetActivityTypes[i],
+                normalizeActivityConfidenceThreshold(intAt(activityConfidenceThresholds, i, DEFAULT_ACTIVITY_CONFIDENCE_THRESHOLD)),
                 boolAt(activityAllowStarredContacts, i),
                 boolAt(activityAllowRepeatCallers, i)
             )
         }
         if (hasResolvedRulePayload) {
-            setupActivityRecognition(targetActivityTypes.isNotEmpty())
+            val groupedActivityTriggerCount = groupedAutomationRules.sumOf { rule ->
+                rule.triggers.count { it.enabled && it.triggerType == TRIGGER_TYPE_ACTIVITY }
+            }
+            val shouldMonitorActivity = targetActivityTypes.isNotEmpty() || groupedActivityTriggerCount > 0
+            android.util.Log.d(
+                "DndActivity",
+                "Activity trigger sync received: flat=${targetActivityTypes.size}, grouped=$groupedActivityTriggerCount, shouldMonitor=$shouldMonitorActivity"
+            )
+            setupActivityRecognition(shouldMonitorActivity)
         }
 
         logSyncedRuleExceptions()
@@ -402,7 +416,7 @@ class DndForegroundService : Service() {
         targetActivityRules.forEach {
             android.util.Log.d(
                 "DndExceptions",
-                "Activity rule received: id=${it.id}, name=${it.name}, activity=${it.activityType}, starred=${it.allowStarredContacts}, repeat=${it.allowRepeatCallers}"
+                "Activity rule received: id=${it.id}, name=${it.name}, activity=${it.activityType}, threshold=${it.confidenceThreshold}, starred=${it.allowStarredContacts}, repeat=${it.allowRepeatCallers}"
             )
         }
     }
@@ -609,7 +623,10 @@ class DndForegroundService : Service() {
             longitude = optionalDouble(triggerJson, "longitude"),
             radius = optionalInt(triggerJson, "radius"),
             packageName = optionalString(triggerJson, "packageName"),
-            activityType = optionalString(triggerJson, "activityType")
+            activityType = optionalString(triggerJson, "activityType"),
+            activityConfidenceThreshold = normalizeActivityConfidenceThreshold(
+                optionalInt(triggerJson, "confidenceThreshold")
+            )
         )
     }
 
@@ -803,31 +820,79 @@ class DndForegroundService : Service() {
     }
 
     private fun setupActivityRecognition(shouldMonitor: Boolean) {
-        val intent = Intent(this, ActivityBroadcastReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            this, 1001, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        )
+        activityRecognitionShouldMonitor = shouldMonitor
+        val pendingIntent = activityRecognitionPendingIntent(this)
 
         if (shouldMonitor) {
-            android.util.Log.d("DndActivity", "Attempting to register Activity Recognition...")
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
-                
-                // Request updates and attach success/failure listeners
-                val task = activityRecognitionClient.requestActivityUpdates(3000, pendingIntent) // Polling every 3 seconds for testing
-                
+            removeLegacyActivityRecognitionPendingIntent()
+            lastActivityRecognitionRegisterRequestedAtMillis = System.currentTimeMillis()
+            android.util.Log.d(
+                "DndActivity",
+                "Attempting to register Activity Recognition: intervalMs=$ACTIVITY_UPDATE_INTERVAL_MS, requestCode=$ACTIVITY_RECOGNITION_REQUEST_CODE, action=$ACTION_ACTIVITY_RECOGNITION_UPDATE, mutable=true"
+            )
+            val hasPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+
+            if (hasPermission) {
+                val task = activityRecognitionClient.requestActivityUpdates(
+                    ACTIVITY_UPDATE_INTERVAL_MS,
+                    pendingIntent
+                )
+
                 task.addOnSuccessListener {
                     android.util.Log.d("DndActivity", "SUCCESS: Activity updates registered with Google Play Services.")
                 }
                 task.addOnFailureListener { e ->
-                    android.util.Log.e("DndActivity", "FAILED to register activity updates: ${e.message}")
+                    val statusCode = (e as? ApiException)?.statusCode
+                    val statusText = statusCode?.let { ", statusCode=$it" } ?: ""
+                    android.util.Log.e(
+                        "DndActivity",
+                        "FAILED to register activity updates: exception=${e::class.java.simpleName}$statusText, message=${e.message}"
+                    )
                 }
             } else {
-                android.util.Log.e("DndActivity", "PERMISSION DENIED: ACTIVITY_RECOGNITION permission is missing.")
+                android.util.Log.e(
+                    "DndActivity",
+                    "PERMISSION DENIED: ACTIVITY_RECOGNITION permission is missing; activity/driving triggers cannot run."
+                )
             }
         } else {
-            android.util.Log.d("DndActivity", "Removing activity updates (No activity rules active).")
+            android.util.Log.d(
+                "DndActivity",
+                "Removing activity updates: reason=no-enabled-activity-rules, requestCode=$ACTIVITY_RECOGNITION_REQUEST_CODE, action=$ACTION_ACTIVITY_RECOGNITION_UPDATE"
+            )
             activityRecognitionClient.removeActivityUpdates(pendingIntent)
+                .addOnSuccessListener {
+                    android.util.Log.d("DndActivity", "Activity updates removed successfully.")
+                }
+                .addOnFailureListener { e ->
+                    val statusCode = (e as? ApiException)?.statusCode
+                    val statusText = statusCode?.let { ", statusCode=$it" } ?: ""
+                    android.util.Log.e(
+                        "DndActivity",
+                        "FAILED to remove activity updates: exception=${e::class.java.simpleName}$statusText, message=${e.message}"
+                    )
+                }
         }
+    }
+
+    private fun removeLegacyActivityRecognitionPendingIntent() {
+        val legacyPendingIntent = legacyActivityRecognitionPendingIntent(this)
+        activityRecognitionClient.removeActivityUpdates(legacyPendingIntent)
+            .addOnSuccessListener {
+                android.util.Log.d(
+                    "DndActivity",
+                    "Legacy activity updates removed before action-based registration."
+                )
+            }
+            .addOnFailureListener { e ->
+                val statusCode = (e as? ApiException)?.statusCode
+                val statusText = statusCode?.let { ", statusCode=$it" } ?: ""
+                android.util.Log.d(
+                    "DndActivity",
+                    "Legacy activity update remove before registration returned: exception=${e::class.java.simpleName}$statusText, message=${e.message}"
+                )
+            }
     }
 
     private fun setupGeofences(ids: Array<String>, lats: DoubleArray, lngs: DoubleArray, rads: IntArray) {
@@ -1324,16 +1389,38 @@ class DndForegroundService : Service() {
         return matched
     }
 
-    private fun activityMatches(ruleActivityType: String, currentActivityInt: Int): Boolean {
-        return when (ruleActivityType) {
-            "IN_VEHICLE" -> currentActivityInt == DetectedActivity.IN_VEHICLE
-            "ON_BICYCLE" -> currentActivityInt == DetectedActivity.ON_BICYCLE
-            "WALKING" -> currentActivityInt == DetectedActivity.WALKING || currentActivityInt == DetectedActivity.ON_FOOT
-            "RUNNING" -> currentActivityInt == DetectedActivity.RUNNING
-            "STILL" -> currentActivityInt == DetectedActivity.STILL
-            "TILTING" -> currentActivityInt == DetectedActivity.TILTING
-            else -> false
+    private fun activityConfidenceByType(prefs: android.content.SharedPreferences): Map<Int, Int> {
+        return KNOWN_DETECTED_ACTIVITY_TYPES.associateWith { activityType ->
+            prefs.getInt(activityConfidencePrefKey(activityType), 0)
         }
+    }
+
+    private fun activitySnapshotAgeMs(prefs: android.content.SharedPreferences): Long? {
+        val updatedAt = prefs.getLong(ACTIVITY_SNAPSHOT_UPDATED_AT_PREF, 0L)
+        if (updatedAt <= 0L) return null
+        return System.currentTimeMillis() - updatedAt
+    }
+
+    private fun refreshActivityRecognitionIfStale(
+        source: String,
+        snapshotAgeMs: Long?
+    ) {
+        if (!activityRecognitionShouldMonitor) return
+        if (activitySnapshotIsFresh(snapshotAgeMs, ACTIVITY_REREGISTER_STALE_MS)) return
+
+        val now = System.currentTimeMillis()
+        val registerAgeMs = if (lastActivityRecognitionRegisterRequestedAtMillis > 0L) {
+            now - lastActivityRecognitionRegisterRequestedAtMillis
+        } else {
+            Long.MAX_VALUE
+        }
+        if (registerAgeMs < ACTIVITY_REREGISTER_STALE_MS) return
+
+        android.util.Log.w(
+            "DndActivity",
+            "Activity updates stale; refreshing registration. source=$source, snapshotAgeMs=${snapshotAgeMs ?: "none"}, lastRegisterAgeMs=${if (registerAgeMs == Long.MAX_VALUE) "none" else registerAgeMs}, staleThresholdMs=$ACTIVITY_REREGISTER_STALE_MS"
+        )
+        setupActivityRecognition(true)
     }
 
     private fun applyDndPolicy(
@@ -1532,6 +1619,10 @@ class DndForegroundService : Service() {
         val isCurrentlyInsideGeofence = prefs.getBoolean("isInsideGeofence", false)
         val activeGeofenceIds = prefs.getStringSet("activeGeofenceIds", emptySet<String>()) ?: emptySet()
         val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
+        val currentActivityConfidence = prefs.getInt("currentActivityConfidence", 0)
+        val activityConfidences = activityConfidenceByType(prefs)
+        val activitySnapshotAgeMillis = activitySnapshotAgeMs(prefs)
+        refreshActivityRecognitionIfStale(source, activitySnapshotAgeMillis)
         val calendar = Calendar.getInstance()
         val currentTotal = (calendar.get(Calendar.HOUR_OF_DAY) * 60) + calendar.get(Calendar.MINUTE)
         val currentTimeMillis = System.currentTimeMillis()
@@ -1583,7 +1674,9 @@ class DndForegroundService : Service() {
                     currentTimeMillis,
                     activeGeofenceIds,
                     currentForegroundPackage,
-                    currentActivityInt
+                    currentActivityInt,
+                    activityConfidences,
+                    activitySnapshotAgeMillis
                 )
                 if (result) {
                     when (trigger.triggerType) {
@@ -1627,7 +1720,7 @@ class DndForegroundService : Service() {
 
         android.util.Log.d(
             "DndGroupedRules",
-            "Grouped evaluation result: source=$source, shouldBeActive=$shouldBeActive, activeParentRules=${matchingRuleNames.joinToString()}, primary=${primaryRule?.name ?: "none"}, primaryPriority=${primaryRule?.priority ?: "none"}, primaryStarred=$allowStarredContacts, primaryRepeat=$allowRepeatCallers, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, calendarWindows=${calendarBusyWindows.size}"
+            "Grouped evaluation result: source=$source, shouldBeActive=$shouldBeActive, activeParentRules=${matchingRuleNames.joinToString()}, primary=${primaryRule?.name ?: "none"}, primaryPriority=${primaryRule?.priority ?: "none"}, primaryStarred=$allowStarredContacts, primaryRepeat=$allowRepeatCallers, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched, currentForegroundPackage=$currentForegroundPackage, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, currentActivity=${detectedActivityName(currentActivityInt)}, currentActivityConfidence=$currentActivityConfidence, activitySnapshotAgeMs=${activitySnapshotAgeMillis ?: "none"}, activitySnapshotFresh=${activitySnapshotIsFresh(activitySnapshotAgeMillis)}, calendarWindows=${calendarBusyWindows.size}"
         )
 
         if (primaryRule != null) {
@@ -1680,7 +1773,9 @@ class DndForegroundService : Service() {
         currentTimeMillis: Long,
         activeGeofenceIds: Set<String>,
         currentForegroundPackage: String?,
-        currentActivityInt: Int
+        currentActivityInt: Int,
+        activityConfidences: Map<Int, Int>,
+        activitySnapshotAgeMs: Long?
     ): Boolean {
         return when (trigger.triggerType) {
             TRIGGER_TYPE_TIME -> {
@@ -1733,7 +1828,27 @@ class DndForegroundService : Service() {
             }
             TRIGGER_TYPE_ACTIVITY -> {
                 val activityType = trigger.activityType
-                activityType != null && activityMatches(activityType, currentActivityInt)
+                val threshold = trigger.activityConfidenceThreshold
+                val confidence = activityTriggerConfidence(activityType, activityConfidences)
+                val targetType = detectedActivityTypeForRuleActivity(activityType)
+                val matched = activityTriggerMatches(
+                    activityType,
+                    activityConfidences,
+                    threshold,
+                    activitySnapshotAgeMs
+                )
+                val reason = when {
+                    activityType == null -> "missing activity type"
+                    targetType == null -> "unknown activity type"
+                    !activitySnapshotIsFresh(activitySnapshotAgeMs) -> "activity snapshot stale or missing"
+                    matched -> "confidence met threshold"
+                    else -> "confidence below threshold"
+                }
+                android.util.Log.d(
+                    "DndActivity",
+                    "Grouped activity trigger evaluated: triggerId=${trigger.id}, targetActivity=$activityType, targetDetected=${targetType?.let { detectedActivityName(it) } ?: "unknown"}, threshold=$threshold, targetConfidence=$confidence, currentMostProbable=${detectedActivityName(currentActivityInt)}, snapshotAgeMs=${activitySnapshotAgeMs ?: "none"}, matched=$matched, reason=$reason"
+                )
+                matched
             }
             TRIGGER_TYPE_CALENDAR -> calendarTriggerMatches(trigger.id, currentTimeMillis)
             else -> {
@@ -1837,11 +1952,44 @@ class DndForegroundService : Service() {
 
         // 4. Activity Check with Logging
         val currentActivityInt = prefs.getInt("currentActivityType", DetectedActivity.UNKNOWN)
+        val currentActivityConfidence = prefs.getInt("currentActivityConfidence", 0)
+        val activityConfidences = activityConfidenceByType(prefs)
+        val activitySnapshotAgeMillis = activitySnapshotAgeMs(prefs)
+        refreshActivityRecognitionIfStale(source, activitySnapshotAgeMillis)
         
-        android.util.Log.d("DndActivity", "Evaluating Rules. source=$source, currentActivityInt=$currentActivityInt, targetActivityTypes=${targetActivityTypes.joinToString()}")
+        android.util.Log.d(
+            "DndActivity",
+            "Evaluating activity rules. source=$source, currentMostProbable=${detectedActivityName(currentActivityInt)}, currentActivityConfidence=$currentActivityConfidence, activitySnapshotAgeMs=${activitySnapshotAgeMillis ?: "none"}, activitySnapshotFresh=${activitySnapshotIsFresh(activitySnapshotAgeMillis)}, targetActivityTypes=${targetActivityTypes.joinToString()}"
+        )
 
         val matchingActivityRules = targetActivityRules.filter {
-            activityMatches(it.activityType, currentActivityInt)
+            activityTriggerMatches(
+                it.activityType,
+                activityConfidences,
+                it.confidenceThreshold,
+                activitySnapshotAgeMillis
+            )
+        }
+        targetActivityRules.forEach { rule ->
+            val threshold = rule.confidenceThreshold
+            val confidence = activityTriggerConfidence(rule.activityType, activityConfidences)
+            val targetType = detectedActivityTypeForRuleActivity(rule.activityType)
+            val matched = activityTriggerMatches(
+                rule.activityType,
+                activityConfidences,
+                threshold,
+                activitySnapshotAgeMillis
+            )
+            val reason = when {
+                targetType == null -> "unknown activity type"
+                !activitySnapshotIsFresh(activitySnapshotAgeMillis) -> "activity snapshot stale or missing"
+                matched -> "confidence met threshold"
+                else -> "confidence below threshold"
+            }
+            android.util.Log.d(
+                "DndActivity",
+                "Flat activity trigger evaluated: ruleId=${rule.id}, ruleName=${rule.name}, targetActivity=${rule.activityType}, targetDetected=${targetType?.let { detectedActivityName(it) } ?: "unknown"}, threshold=$threshold, targetConfidence=$confidence, currentMostProbable=${detectedActivityName(currentActivityInt)}, snapshotAgeMs=${activitySnapshotAgeMillis ?: "none"}, matched=$matched, reason=$reason"
+            )
         }
 
         // 5. Trigger Evaluation

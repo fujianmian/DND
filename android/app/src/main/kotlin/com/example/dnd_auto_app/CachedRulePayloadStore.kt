@@ -35,7 +35,8 @@ object CachedRulePayloadStore {
         "endMinutes",
         "timeRepeatModes",
         "timeRepeatDaysMasks",
-        "rads"
+        "rads",
+        "activityConfidenceThresholds"
     )
 
     private val DOUBLE_ARRAY_KEYS = listOf("lats", "lngs")

@@ -568,6 +568,9 @@ class DndService {
       final activityTypes = activityRules
           .map((e) => e['activityType'] as String)
           .toList();
+      final activityConfidenceThresholds = activityRules
+          .map((e) => e['confidenceThreshold'] as int? ?? 40)
+          .toList();
       final activityAllowStarredContacts = activityRules
           .map((e) => e['allowStarredContacts'] as bool)
           .toList();
@@ -601,6 +604,7 @@ class DndService {
         'activityRuleIds': activityRuleIds,
         'activityRuleNames': activityRuleNames,
         'activityTypes': activityTypes,
+        'activityConfidenceThresholds': activityConfidenceThresholds,
         'activityAllowStarredContacts': activityAllowStarredContacts,
         'activityAllowRepeatCallers': activityAllowRepeatCallers,
         'automationRulesJson': automationRulesJson,

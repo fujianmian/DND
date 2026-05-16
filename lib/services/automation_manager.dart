@@ -7,6 +7,8 @@ import '../models/time_repeat.dart';
 import 'app_catalog.dart';
 import 'dnd_service.dart';
 
+const int defaultActivityConfidenceThreshold = 40;
+
 class AutomationSyncPayload {
   const AutomationSyncPayload({
     required this.enabledRuleCount,
@@ -129,6 +131,13 @@ class AutomationManager with WidgetsBindingObserver {
         "app=${payload.appRules.length}, "
         "activity=${payload.activityRules.length}",
       );
+      if (payload.activityRules.isNotEmpty) {
+        debugPrint(
+          "Automation activity payload: ${payload.activityRules.map((rule) {
+            return 'id=${rule['id']}, name=${rule['name']}, activityType=${rule['activityType']}, confidenceThreshold=${rule['confidenceThreshold']}';
+          }).join(' | ')}",
+        );
+      }
       debugPrint(
         "Automation grouped payload: rules=${payload.groupedRuleCount}, "
         "triggers=${payload.groupedTriggerCount}, "
@@ -483,7 +492,11 @@ class AutomationManager with WidgetsBindingObserver {
           );
           return null;
         }
-        return {...base, 'activityType': activityType};
+        return {
+          ...base,
+          'activityType': activityType,
+          'confidenceThreshold': defaultActivityConfidenceThreshold,
+        };
       case 4:
         return base;
       default:
@@ -609,6 +622,7 @@ class AutomationManager with WidgetsBindingObserver {
       'id': rule.id.toString(),
       'name': rule.name,
       'activityType': activityType,
+      'confidenceThreshold': defaultActivityConfidenceThreshold,
       'allowStarredContacts': rule.allowStarredContacts,
       'allowRepeatCallers': rule.allowRepeatCallers,
     });

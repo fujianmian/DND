@@ -531,6 +531,7 @@ class MainActivity: FlutterActivity() {
                     val activityRuleIds = call.argument<ArrayList<String>>("activityRuleIds")?.toTypedArray() ?: emptyArray()
                     val activityRuleNames = call.argument<ArrayList<String>>("activityRuleNames")?.toTypedArray() ?: emptyArray()
                     val activityTypes = call.argument<ArrayList<String>>("activityTypes")?.toTypedArray() ?: emptyArray()   
+                    val activityConfidenceThresholds = call.argument<ArrayList<Int>>("activityConfidenceThresholds")?.toIntArray() ?: intArrayOf()
                     val activityAllowStarredContacts = booleanArrayArg(call, "activityAllowStarredContacts")
                     val activityAllowRepeatCallers = booleanArrayArg(call, "activityAllowRepeatCallers")
                     val automationRulesJson = call.argument<String>("automationRulesJson") ?: ""
@@ -566,6 +567,7 @@ class MainActivity: FlutterActivity() {
                         putExtra("activityRuleIds", activityRuleIds)
                         putExtra("activityRuleNames", activityRuleNames)
                         putExtra("activityTypes", activityTypes)
+                        putExtra("activityConfidenceThresholds", activityConfidenceThresholds)
                         putExtra("activityAllowStarredContacts", activityAllowStarredContacts)
                         putExtra("activityAllowRepeatCallers", activityAllowRepeatCallers)
                         putExtra("automationRulesJson", automationRulesJson)

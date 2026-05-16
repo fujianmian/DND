@@ -83,6 +83,63 @@ void main() {
     expect(trigger['timeRepeatDaysMask'], timeRepeatEveryDayMask);
   });
 
+  test('builds single-trigger activity payload from RuleTriggers', () async {
+    final ruleId = await database.createRuleWithTriggers(
+      rule: withFirstTriggerLegacyFields(
+        RulesCompanion.insert(
+          name: 'Driving',
+          type: RuleTriggerDraft.activity,
+          allowRepeatCallers: const d.Value(true),
+        ),
+        const RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.activity,
+          activityType: 'IN_VEHICLE',
+        ),
+      ),
+      triggers: const [
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.activity,
+          activityType: 'IN_VEHICLE',
+        ),
+      ].map((draft) => draft.toCompanion()).toList(),
+    );
+
+    final savedTriggers = await database.getRuleTriggers(ruleId);
+    expect(savedTriggers, hasLength(1));
+    expect(savedTriggers.single.triggerType, RuleTriggerDraft.activity);
+    expect(savedTriggers.single.activityType, 'IN_VEHICLE');
+    expect(savedTriggers.single.enabled, isTrue);
+
+    final payload = automationManager.buildSyncPayloadFromRuleTriggers(
+      await database.getEnabledRulesWithTriggers(),
+    );
+
+    expect(payload.activityRules, hasLength(1));
+    expect(payload.activityRules.single['id'], ruleId.toString());
+    expect(payload.activityRules.single['name'], 'Driving');
+    expect(payload.activityRules.single['activityType'], 'IN_VEHICLE');
+    expect(
+      payload.activityRules.single['confidenceThreshold'],
+      defaultActivityConfidenceThreshold,
+    );
+    expect(payload.activityRules.single['allowRepeatCallers'], isTrue);
+    expect(payload.legacyFallbackCount, 0);
+    expect(payload.groupedRuleCount, 1);
+    expect(payload.groupedTriggerCount, 1);
+
+    final groupedRules = jsonDecode(payload.automationRulesJson) as List;
+    final groupedRule = groupedRules.single as Map<String, dynamic>;
+    expect(groupedRule['id'], ruleId.toString());
+    expect(groupedRule['name'], 'Driving');
+    expect(groupedRule['allowRepeatCallers'], isTrue);
+
+    final trigger = (groupedRule['triggers'] as List).single as Map;
+    expect(trigger['triggerType'], RuleTriggerDraft.activity);
+    expect(trigger['activityType'], 'IN_VEHICLE');
+    expect(trigger['confidenceThreshold'], defaultActivityConfidenceThreshold);
+    expect(trigger['enabled'], isTrue);
+  });
+
   test(
     'serializes custom time repeat settings in grouped and flat payloads',
     () async {

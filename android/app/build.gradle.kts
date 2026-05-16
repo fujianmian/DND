@@ -29,6 +29,10 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.dnd_auto_app"
@@ -59,4 +63,5 @@ dependencies {
 
     // ADD IT HERE:
     implementation("com.google.android.gms:play-services-location:21.2.0")
+    testImplementation("junit:junit:4.13.2")
 }

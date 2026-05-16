@@ -50,7 +50,14 @@
             android:exported="true" />
         <receiver 
             android:name=".ActivityBroadcastReceiver" 
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.dnd_auto_app.ACTIVITY_RECOGNITION_UPDATE" />
+                <action android:name="com.example.dnd_auto_app.ACTIVITY_RECOGNITION_DEBUG_REGISTER" />
+                <action android:name="com.example.dnd_auto_app.ACTIVITY_RECOGNITION_DEBUG_REMOVE" />
+                <action android:name="com.example.dnd_auto_app.ACTIVITY_RECOGNITION_DEBUG_SIMULATE" />
+            </intent-filter>
+        </receiver>
         <receiver
             android:name=".BootCompletedReceiver"
             android:exported="true">
