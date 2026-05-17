@@ -42,8 +42,6 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
   CalendarConnectionMetadata _calendarMetadata =
       const CalendarConnectionMetadata(connected: false);
 
-  bool _allowStarredContacts = false;
-  bool _allowRepeatCallers = false;
   int _priority = rulePriorityTime;
   bool _priorityManuallySelected = false;
 
@@ -147,10 +145,10 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
               ),
               Step(
                 title: const Text(
-                  'Priority & exceptions',
+                  'Priority',
                   style: TextStyle(color: AppTheme.pureBlack),
                 ),
-                content: _buildActionExceptions(),
+                content: _buildPriorityStep(),
                 isActive: _currentStep >= 2,
               ),
             ],
@@ -538,7 +536,7 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
     );
   }
 
-  Widget _buildActionExceptions() {
+  Widget _buildPriorityStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -553,47 +551,6 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
               _priorityManuallySelected = true;
             });
           },
-        ),
-        const SizedBox(height: AppTheme.sectionGap),
-        _sectionTitle('Exceptions'),
-        const SizedBox(height: 12),
-        Text(
-          'These apply when this rule is the primary active rule.',
-          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          margin: EdgeInsets.zero,
-          child: Column(
-            children: [
-              SwitchListTile(
-                title: const Text(
-                  'Allow starred contacts',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
-                value: _allowStarredContacts,
-                onChanged: (val) => setState(() => _allowStarredContacts = val),
-              ),
-              Divider(
-                height: 1,
-                color: AppTheme.pureBlack.withValues(alpha: 0.1),
-              ),
-              SwitchListTile(
-                title: const Text(
-                  'Allow repeat callers',
-                  style: TextStyle(color: AppTheme.pureBlack),
-                ),
-                subtitle: Text(
-                  'If they call twice in 15 mins',
-                  style: TextStyle(
-                    color: AppTheme.pureBlack.withValues(alpha: 0.62),
-                  ),
-                ),
-                value: _allowRepeatCallers,
-                onChanged: (val) => setState(() => _allowRepeatCallers = val),
-              ),
-            ],
-          ),
         ),
       ],
     );
@@ -818,8 +775,8 @@ class _CreateRuleWizardState extends State<CreateRuleWizard> {
         matchType: d.Value(_matchType),
         priority: d.Value(_effectivePriority),
         profileId: d.Value<int?>(widget.profileId),
-        allowStarredContacts: d.Value(_allowStarredContacts),
-        allowRepeatCallers: d.Value(_allowRepeatCallers),
+        allowStarredContacts: const d.Value(false),
+        allowRepeatCallers: const d.Value(false),
       );
 
       await database.createRuleWithTriggers(

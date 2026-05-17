@@ -28,8 +28,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
           name: result.name,
           description: d.Value(result.description),
           isEnabled: d.Value(result.isEnabled),
-          allowStarredContacts: d.Value(result.allowStarredContacts),
-          allowRepeatCallers: d.Value(result.allowRepeatCallers),
+          allowStarredContacts: const d.Value(false),
+          allowRepeatCallers: const d.Value(false),
           createdAt: now,
           updatedAt: now,
         ),
@@ -239,18 +239,6 @@ class _ProfileCard extends StatelessWidget {
                   label: _ruleCountLabel(entry.ruleCount),
                   color: AppTheme.logoPurple,
                 ),
-                if (profile.allowStarredContacts)
-                  const _InfoChip(
-                    icon: Icons.star_outline,
-                    label: 'Starred contacts',
-                    color: AppTheme.logoCyan,
-                  ),
-                if (profile.allowRepeatCallers)
-                  const _InfoChip(
-                    icon: Icons.repeat,
-                    label: 'Repeat callers',
-                    color: AppTheme.logoCyan,
-                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -388,8 +376,6 @@ class _ProfileFormDialogState extends State<_ProfileFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
   late bool _isEnabled;
-  late bool _allowStarredContacts;
-  late bool _allowRepeatCallers;
   String? _nameError;
 
   @override
@@ -398,8 +384,6 @@ class _ProfileFormDialogState extends State<_ProfileFormDialog> {
     _nameController = TextEditingController();
     _descriptionController = TextEditingController();
     _isEnabled = true;
-    _allowStarredContacts = false;
-    _allowRepeatCallers = false;
     _nameController.addListener(_clearNameErrorWhenValid);
   }
 
@@ -432,8 +416,6 @@ class _ProfileFormDialogState extends State<_ProfileFormDialog> {
         name: _nameController.text.trim(),
         description: description.isEmpty ? null : description,
         isEnabled: _isEnabled,
-        allowStarredContacts: _allowStarredContacts,
-        allowRepeatCallers: _allowRepeatCallers,
       ),
     );
   }
@@ -472,24 +454,6 @@ class _ProfileFormDialogState extends State<_ProfileFormDialog> {
               onChanged: (value) => setState(() => _isEnabled = value),
               title: const Text('Enabled'),
             ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _allowStarredContacts,
-              onChanged: (value) {
-                setState(() => _allowStarredContacts = value ?? false);
-              },
-              title: const Text('Allow starred contacts'),
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _allowRepeatCallers,
-              onChanged: (value) {
-                setState(() => _allowRepeatCallers = value ?? false);
-              },
-              title: const Text('Allow repeat callers'),
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
           ],
         ),
       ),
@@ -509,13 +473,9 @@ class _ProfileFormResult {
     required this.name,
     required this.description,
     required this.isEnabled,
-    required this.allowStarredContacts,
-    required this.allowRepeatCallers,
   });
 
   final String name;
   final String? description;
   final bool isEnabled;
-  final bool allowStarredContacts;
-  final bool allowRepeatCallers;
 }

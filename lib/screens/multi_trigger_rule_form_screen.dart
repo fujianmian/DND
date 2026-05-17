@@ -36,8 +36,6 @@ class _MultiTriggerRuleFormScreenState
   late final int _ruleId;
   late int _matchType;
   late bool _isEnabled;
-  late bool _allowStarredContacts;
-  late bool _allowRepeatCallers;
   late int _priority;
   late List<_ConditionDraft> _conditions;
 
@@ -66,8 +64,6 @@ class _MultiTriggerRuleFormScreenState
     _nameController = TextEditingController(text: rule.name);
     _matchType = rule.matchType == 1 ? 1 : 0;
     _isEnabled = rule.isEnabled;
-    _allowStarredContacts = rule.allowStarredContacts;
-    _allowRepeatCallers = rule.allowRepeatCallers;
     _priority = rule.priority;
 
     final drafts = entry.triggers.isEmpty
@@ -161,8 +157,6 @@ class _MultiTriggerRuleFormScreenState
             _sectionTitle('Priority'),
             const SizedBox(height: 8),
             _buildPrioritySelector(),
-            const SizedBox(height: AppTheme.sectionGap),
-            _buildExceptionControls(),
             const SizedBox(height: 32),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -518,39 +512,6 @@ class _MultiTriggerRuleFormScreenState
     );
   }
 
-  Widget _buildExceptionControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Exceptions', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Text(
-          'These apply when this rule is the primary active rule.',
-          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Column(
-            children: [
-              SwitchListTile(
-                title: const Text('Allow starred contacts'),
-                value: _allowStarredContacts,
-                onChanged: (val) => setState(() => _allowStarredContacts = val),
-              ),
-              const Divider(height: 1),
-              SwitchListTile(
-                title: const Text('Allow repeat callers'),
-                subtitle: const Text('If they call twice in 15 mins'),
-                value: _allowRepeatCallers,
-                onChanged: (val) => setState(() => _allowRepeatCallers = val),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildPrioritySelector() {
     final choices = {...rulePriorityChoices, _priority}.toList()..sort();
 
@@ -766,8 +727,8 @@ class _MultiTriggerRuleFormScreenState
         matchType: d.Value(_matchType),
         priority: d.Value(_priority),
         profileId: d.Value<int?>(widget.ruleWithTriggers.rule.profileId),
-        allowStarredContacts: d.Value(_allowStarredContacts),
-        allowRepeatCallers: d.Value(_allowRepeatCallers),
+        allowStarredContacts: const d.Value(false),
+        allowRepeatCallers: const d.Value(false),
       );
 
       await database.updateRuleWithTriggers(

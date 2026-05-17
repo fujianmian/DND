@@ -134,7 +134,7 @@ void main() {
   );
 
   test(
-    'sync payload preserves single-trigger values and parent exceptions',
+    'sync payload preserves single-trigger values and suppresses exception flags',
     () async {
       final timeId = await database.createSingleTriggerRule(
         RulesCompanion.insert(
@@ -186,20 +186,20 @@ void main() {
       expect(payload.timeRules.single['startMinute'], 5);
       expect(payload.timeRules.single['endHour'], 17);
       expect(payload.timeRules.single['endMinute'], 45);
-      expect(payload.timeRules.single['allowStarredContacts'], isTrue);
+      expect(payload.timeRules.single['allowStarredContacts'], isFalse);
 
       expect(payload.locationRules.single['id'], locationId.toString());
       expect(payload.locationRules.single['name'], 'Campus');
       expect(payload.locationRules.single['lat'], 3.139);
       expect(payload.locationRules.single['lng'], 101.6869);
       expect(payload.locationRules.single['rad'], 125);
-      expect(payload.locationRules.single['allowRepeatCallers'], isTrue);
+      expect(payload.locationRules.single['allowRepeatCallers'], isFalse);
 
       expect(payload.appRules.single['id'], appId.toString());
       expect(payload.appRules.single['name'], 'Study App');
       expect(payload.appRules.single['packageName'], 'com.example.study');
-      expect(payload.appRules.single['allowStarredContacts'], isTrue);
-      expect(payload.appRules.single['allowRepeatCallers'], isTrue);
+      expect(payload.appRules.single['allowStarredContacts'], isFalse);
+      expect(payload.appRules.single['allowRepeatCallers'], isFalse);
 
       expect(payload.activityRules.single['id'], activityId.toString());
       expect(payload.activityRules.single['name'], 'Walking');

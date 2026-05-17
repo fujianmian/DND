@@ -55,7 +55,7 @@ void main() {
       payload.timeRules.single['timeRepeatDaysMask'],
       timeRepeatEveryDayMask,
     );
-    expect(payload.timeRules.single['allowStarredContacts'], isTrue);
+    expect(payload.timeRules.single['allowStarredContacts'], isFalse);
     expect(payload.legacyFallbackCount, 0);
     expect(payload.groupedRuleCount, 1);
     expect(payload.groupedTriggerCount, 1);
@@ -68,7 +68,7 @@ void main() {
     expect(groupedRule['enabled'], isTrue);
     expect(groupedRule['matchType'], 0);
     expect(groupedRule['priority'], 50);
-    expect(groupedRule['allowStarredContacts'], isTrue);
+    expect(groupedRule['allowStarredContacts'], isFalse);
     expect(groupedRule['allowRepeatCallers'], isFalse);
 
     final triggers = groupedRule['triggers'] as List;
@@ -122,7 +122,7 @@ void main() {
       payload.activityRules.single['confidenceThreshold'],
       defaultActivityConfidenceThreshold,
     );
-    expect(payload.activityRules.single['allowRepeatCallers'], isTrue);
+    expect(payload.activityRules.single['allowRepeatCallers'], isFalse);
     expect(payload.legacyFallbackCount, 0);
     expect(payload.groupedRuleCount, 1);
     expect(payload.groupedTriggerCount, 1);
@@ -131,7 +131,7 @@ void main() {
     final groupedRule = groupedRules.single as Map<String, dynamic>;
     expect(groupedRule['id'], ruleId.toString());
     expect(groupedRule['name'], 'Driving');
-    expect(groupedRule['allowRepeatCallers'], isTrue);
+    expect(groupedRule['allowRepeatCallers'], isFalse);
 
     final trigger = (groupedRule['triggers'] as List).single as Map;
     expect(trigger['triggerType'], RuleTriggerDraft.activity);
@@ -202,7 +202,7 @@ void main() {
 
     expect(payload.appRules, hasLength(1));
     expect(payload.appRules.single['packageName'], 'com.example.legacy');
-    expect(payload.appRules.single['allowRepeatCallers'], isTrue);
+    expect(payload.appRules.single['allowRepeatCallers'], isFalse);
     expect(payload.legacyFallbackCount, 1);
     expect(payload.groupedRuleCount, 0);
     expect(payload.groupedTriggerCount, 0);
@@ -406,7 +406,7 @@ void main() {
     },
   );
 
-  test('profile-aware sync merges exception flags with OR', () async {
+  test('profile-aware sync suppresses stored exception flags', () async {
     const createdAt = 1760000000000;
     final profileStarredId = await database.createProfile(
       ProfilesCompanion.insert(
@@ -517,11 +517,11 @@ void main() {
 
     expect(
       flatById[profileStarredRuleId.toString()]!['allowStarredContacts'],
-      isTrue,
+      isFalse,
     );
     expect(
       flatById[ruleStarredRuleId.toString()]!['allowStarredContacts'],
-      isTrue,
+      isFalse,
     );
     expect(
       flatById[bothFalseRuleId.toString()]!['allowStarredContacts'],
@@ -529,7 +529,7 @@ void main() {
     );
     expect(
       flatById[profileRepeatLegacyId.toString()]!['allowRepeatCallers'],
-      isTrue,
+      isFalse,
     );
     expect(payload.legacyFallbackCount, 1);
 
@@ -540,11 +540,11 @@ void main() {
     };
     expect(
       groupedById[profileStarredRuleId.toString()]!['allowStarredContacts'],
-      isTrue,
+      isFalse,
     );
     expect(
       groupedById[ruleStarredRuleId.toString()]!['allowStarredContacts'],
-      isTrue,
+      isFalse,
     );
     expect(
       groupedById[bothFalseRuleId.toString()]!['allowStarredContacts'],
@@ -583,8 +583,8 @@ void main() {
     expect(payload.timeRules.single['id'], ruleId.toString());
     expect(payload.appRules.single['id'], ruleId.toString());
     expect(payload.appRules.single['name'], 'Hybrid');
-    expect(payload.appRules.single['allowStarredContacts'], isTrue);
-    expect(payload.appRules.single['allowRepeatCallers'], isTrue);
+    expect(payload.appRules.single['allowStarredContacts'], isFalse);
+    expect(payload.appRules.single['allowRepeatCallers'], isFalse);
   });
 
   test(
@@ -699,7 +699,7 @@ void main() {
       ]) {
         expect(entry['id'], ruleId.toString());
         expect(entry['name'], 'All Saved');
-        expect(entry['allowStarredContacts'], isTrue);
+        expect(entry['allowStarredContacts'], isFalse);
       }
 
       final groupedRules = jsonDecode(payload.automationRulesJson) as List;
@@ -708,7 +708,7 @@ void main() {
       expect(groupedRule['name'], 'All Saved');
       expect(groupedRule['matchType'], 1);
       expect(groupedRule['priority'], 70);
-      expect(groupedRule['allowStarredContacts'], isTrue);
+      expect(groupedRule['allowStarredContacts'], isFalse);
 
       final triggers = groupedRule['triggers'] as List;
       expect(triggers, hasLength(3));

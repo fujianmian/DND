@@ -691,7 +691,7 @@ void main() {
       final triggers = await database.getRuleTriggers(ruleId);
 
       expect(rule.matchType, 1);
-      expect(rule.allowStarredContacts, isTrue);
+      expect(rule.allowStarredContacts, isFalse);
       expect(rule.type, RuleTriggerDraft.location);
       expect(rule.latitude, 3.139);
       expect(rule.longitude, 101.6869);
@@ -709,7 +709,7 @@ void main() {
   );
 
   test(
-    'creates a three-condition ALL rule with exceptions and legacy mirror',
+    'creates a three-condition ALL rule with cleared exception flags and legacy mirror',
     () async {
       const drafts = [
         RuleTriggerDraft(
@@ -745,8 +745,8 @@ void main() {
       final triggers = await database.getRuleTriggers(ruleId);
 
       expect(rule.matchType, 1);
-      expect(rule.allowStarredContacts, isTrue);
-      expect(rule.allowRepeatCallers, isTrue);
+      expect(rule.allowStarredContacts, isFalse);
+      expect(rule.allowRepeatCallers, isFalse);
       expect(rule.type, RuleTriggerDraft.time);
       expect(rule.startTime, '09:00');
       expect(rule.endTime, '17:00');
@@ -810,7 +810,7 @@ void main() {
 
       expect(rule.name, 'Updated');
       expect(rule.matchType, 0);
-      expect(rule.allowRepeatCallers, isTrue);
+      expect(rule.allowRepeatCallers, isFalse);
       expect(rule.type, RuleTriggerDraft.activity);
       expect(rule.activityType, 'WALKING');
       expect(rule.startTime, isNull);

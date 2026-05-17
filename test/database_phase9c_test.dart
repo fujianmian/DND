@@ -445,7 +445,7 @@ void main() {
     expect(profile!.name, 'Work');
     expect(profile.description, 'Office hours');
     expect(profile.isEnabled, isTrue);
-    expect(profile.allowStarredContacts, isTrue);
+    expect(profile.allowStarredContacts, isFalse);
     expect(profile.allowRepeatCallers, isFalse);
     expect(profile.isArchived, isFalse);
 
@@ -460,7 +460,8 @@ void main() {
     profile = await database.getProfile(profileId);
     expect(profile!.name, 'Deep Work');
     expect(profile.description, 'Focus block');
-    expect(profile.allowRepeatCallers, isTrue);
+    expect(profile.allowStarredContacts, isFalse);
+    expect(profile.allowRepeatCallers, isFalse);
 
     await database.setProfileEnabled(
       profileId,

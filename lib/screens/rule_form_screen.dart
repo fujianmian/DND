@@ -69,8 +69,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   List<AppCatalogEntry> _installedApps = [];
   bool _isLoadingApps = false;
   bool _hasMultipleTriggers = false;
-  bool _allowStarredContacts = false;
-  bool _allowRepeatCallers = false;
   int _priority = rulePriorityTime;
   bool _priorityManuallySelected = false;
   bool _isCalendarAuthBusy = false;
@@ -200,8 +198,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       _activityType = widget.rule!.activityType;
     }
 
-    _allowStarredContacts = widget.rule?.allowStarredContacts ?? false;
-    _allowRepeatCallers = widget.rule?.allowRepeatCallers ?? false;
     _priority = widget.rule?.priority ?? rulePriorityTime;
     _priorityManuallySelected = widget.rule != null;
 
@@ -427,8 +423,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         isEnabled: const d.Value(true),
         priority: d.Value(selectedPriority),
         profileId: d.Value<int?>(widget.profileId),
-        allowStarredContacts: d.Value(_allowStarredContacts),
-        allowRepeatCallers: d.Value(_allowRepeatCallers),
+        allowStarredContacts: const d.Value(false),
+        allowRepeatCallers: const d.Value(false),
       );
       await database.createRuleWithTriggers(
         rule: withFirstTriggerLegacyFields(baseRule, draft),
@@ -441,8 +437,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         isEnabled: d.Value(widget.rule!.isEnabled),
         priority: d.Value(selectedPriority),
         profileId: d.Value<int?>(widget.rule!.profileId),
-        allowStarredContacts: d.Value(_allowStarredContacts),
-        allowRepeatCallers: d.Value(_allowRepeatCallers),
+        allowStarredContacts: const d.Value(false),
+        allowRepeatCallers: const d.Value(false),
       );
       await database.updateRuleWithTriggers(
         ruleId: widget.rule!.id,
@@ -884,9 +880,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
             const SizedBox(height: AppTheme.sectionGap),
             _buildPrioritySelector(),
 
-            const SizedBox(height: AppTheme.sectionGap),
-            _buildExceptionControls(),
-
             const SizedBox(height: 40),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -898,39 +891,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildExceptionControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text("Exceptions", style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Text(
-          "These apply when this rule is the primary active rule.",
-          style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.62)),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Column(
-            children: [
-              SwitchListTile(
-                title: const Text("Allow starred contacts"),
-                value: _allowStarredContacts,
-                onChanged: (val) => setState(() => _allowStarredContacts = val),
-              ),
-              const Divider(height: 1),
-              SwitchListTile(
-                title: const Text("Allow repeat callers"),
-                subtitle: const Text("If they call twice in 15 mins"),
-                value: _allowRepeatCallers,
-                onChanged: (val) => setState(() => _allowRepeatCallers = val),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

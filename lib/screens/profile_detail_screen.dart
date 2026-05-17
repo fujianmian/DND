@@ -24,8 +24,6 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
   late bool _profileEnabled;
-  late bool _allowStarredContacts;
-  late bool _allowRepeatCallers;
   int? _loadedProfileUpdatedAt;
   String? _nameError;
   bool _profileFormDirty = false;
@@ -58,8 +56,6 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
     _nameController.text = profile.name;
     _descriptionController.text = profile.description ?? '';
     _profileEnabled = profile.isEnabled;
-    _allowStarredContacts = profile.allowStarredContacts;
-    _allowRepeatCallers = profile.allowRepeatCallers;
     _loadedProfileUpdatedAt = profile.updatedAt;
     _nameError = null;
     _profileFormDirty = false;
@@ -158,8 +154,8 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
           name: _nameController.text.trim(),
           description: d.Value(description.isEmpty ? null : description),
           isEnabled: _profileEnabled,
-          allowStarredContacts: _allowStarredContacts,
-          allowRepeatCallers: _allowRepeatCallers,
+          allowStarredContacts: false,
+          allowRepeatCallers: false,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         ),
       );
@@ -316,25 +312,6 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
               value: _profileEnabled,
               onChanged: (enabled) {
                 _setProfileDraft(() => _profileEnabled = enabled);
-              },
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Allow starred contacts'),
-              value: _allowStarredContacts,
-              onChanged: (value) {
-                _setProfileDraft(() => _allowStarredContacts = value);
-              },
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Allow repeat callers'),
-              subtitle: const Text('If they call twice in 15 mins'),
-              value: _allowRepeatCallers,
-              onChanged: (value) {
-                _setProfileDraft(() => _allowRepeatCallers = value);
               },
             ),
             const SizedBox(height: 12),
@@ -546,10 +523,6 @@ class _ProfileRuleCard extends StatelessWidget {
                     context,
                     'Priority: ${priorityLabel(rule.priority)}',
                   ),
-                  if (rule.allowStarredContacts)
-                    _buildChip(context, 'Starred contacts'),
-                  if (rule.allowRepeatCallers)
-                    _buildChip(context, 'Repeat callers'),
                 ],
               ),
             ],

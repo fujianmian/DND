@@ -297,13 +297,6 @@ class _RuleListScreenState extends State<RuleListScreen> {
       _buildChip('Priority: ${priorityLabel(rule.priority)}'),
     ];
 
-    if (rule.allowStarredContacts) {
-      chips.add(_buildChip('Starred contacts'));
-    }
-    if (rule.allowRepeatCallers) {
-      chips.add(_buildChip('Repeat callers'));
-    }
-
     return chips;
   }
 

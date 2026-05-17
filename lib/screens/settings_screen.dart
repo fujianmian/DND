@@ -712,7 +712,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _buildPermissionRow(
         icon: Icons.do_not_disturb_on,
         title: 'DND access',
-        description: 'Required for DND automation and DND policy exceptions.',
+        description: 'Required for DND automation.',
         granted: _dndAccessGranted,
         onPressed: _openDndAccessSettings,
       ),

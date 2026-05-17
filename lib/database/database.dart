@@ -288,7 +288,9 @@ class AppDatabase extends _$AppDatabase {
   // 1. CREATE: Insert a new rule
   Future<int> insertRule(RulesCompanion rule) {
     return into(rules).insert(
-      _withPriorityIfAbsent(rule, _priorityForLegacyRuleCompanion(rule)),
+      _withoutRuleExceptions(
+        _withPriorityIfAbsent(rule, _priorityForLegacyRuleCompanion(rule)),
+      ),
     );
   }
 
@@ -299,9 +301,9 @@ class AppDatabase extends _$AppDatabase {
         triggerType: triggerType,
         activityType: _nullableValue(rule.activityType),
       );
-      final ruleId = await into(
-        rules,
-      ).insert(_withPriorityIfAbsent(rule, derivedPriority));
+      final ruleId = await into(rules).insert(
+        _withoutRuleExceptions(_withPriorityIfAbsent(rule, derivedPriority)),
+      );
       await _replaceSingleTriggerForValues(
         ruleId: ruleId,
         triggerType: triggerType,
@@ -331,7 +333,9 @@ class AppDatabase extends _$AppDatabase {
 
     return transaction(() async {
       final ruleId = await into(rules).insert(
-        _withPriorityIfAbsent(rule, _priorityForTriggerCompanions(triggers)),
+        _withoutRuleExceptions(
+          _withPriorityIfAbsent(rule, _priorityForTriggerCompanions(triggers)),
+        ),
       );
       await _insertTriggersForRule(ruleId, triggers);
       return ruleId;
@@ -385,7 +389,9 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // 3. UPDATE: Toggle enable/disable or edit rule
-  Future<bool> updateRule(Rule rule) => update(rules).replace(rule);
+  Future<bool> updateRule(Rule rule) {
+    return update(rules).replace(_withoutRuleExceptionsRow(rule));
+  }
 
   Future<bool> updateSingleTriggerRule(
     Rule rule, {
@@ -393,14 +399,16 @@ class AppDatabase extends _$AppDatabase {
   }) {
     return transaction(() async {
       final updated = await update(rules).replace(
-        preservePriority
-            ? rule
-            : rule.copyWith(
-                priority: priorityForTrigger(
-                  triggerType: rule.type,
-                  activityType: rule.activityType,
+        _withoutRuleExceptionsRow(
+          preservePriority
+              ? rule
+              : rule.copyWith(
+                  priority: priorityForTrigger(
+                    triggerType: rule.type,
+                    activityType: rule.activityType,
+                  ),
                 ),
-              ),
+        ),
       );
       await _replaceSingleTriggerForRule(rule);
       return updated;
@@ -419,9 +427,11 @@ class AppDatabase extends _$AppDatabase {
     return transaction(() async {
       final updated =
           await (update(rules)..where((rule) => rule.id.equals(ruleId))).write(
-            _withPriorityIfAbsent(
-              rule,
-              _priorityForTriggerCompanions(triggers),
+            _withoutRuleExceptions(
+              _withPriorityIfAbsent(
+                rule,
+                _priorityForTriggerCompanions(triggers),
+              ),
             ),
           );
       await (delete(
@@ -446,12 +456,24 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> createProfile(ProfilesCompanion profile) {
     final name = _normalizeProfileName(_requiredValue(profile.name, 'name'));
-    return into(profiles).insert(profile.copyWith(name: Value(name)));
+    return into(profiles).insert(
+      profile.copyWith(
+        name: Value(name),
+        allowStarredContacts: const Value(false),
+        allowRepeatCallers: const Value(false),
+      ),
+    );
   }
 
   Future<bool> updateProfile(Profile profile) {
     final name = _normalizeProfileName(profile.name);
-    return update(profiles).replace(profile.copyWith(name: name));
+    return update(profiles).replace(
+      profile.copyWith(
+        name: name,
+        allowStarredContacts: false,
+        allowRepeatCallers: false,
+      ),
+    );
   }
 
   Future<int> setProfileEnabled(int id, bool enabled, {int? updatedAt}) {
@@ -866,6 +888,20 @@ WHERE priority = $rulePriorityTime
   RulesCompanion _withPriorityIfAbsent(RulesCompanion rule, int priority) {
     if (rule.priority.present) return rule;
     return _withPriority(rule, priority);
+  }
+
+  RulesCompanion _withoutRuleExceptions(RulesCompanion rule) {
+    return rule.copyWith(
+      allowStarredContacts: const Value(false),
+      allowRepeatCallers: const Value(false),
+    );
+  }
+
+  Rule _withoutRuleExceptionsRow(Rule rule) {
+    return rule.copyWith(
+      allowStarredContacts: false,
+      allowRepeatCallers: false,
+    );
   }
 
   RulesCompanion _withPriority(RulesCompanion rule, int priority) {

@@ -237,8 +237,8 @@ class AutomationManager with WidgetsBindingObserver {
           'enabled': rule.isEnabled,
           'matchType': rule.matchType,
           'priority': rule.priority,
-          'allowStarredContacts': rule.allowStarredContacts,
-          'allowRepeatCallers': rule.allowRepeatCallers,
+          'allowStarredContacts': false,
+          'allowRepeatCallers': false,
           'triggers': groupedTriggers,
         });
       }
@@ -351,10 +351,8 @@ class AutomationManager with WidgetsBindingObserver {
       effectiveEntries.add(
         RuleWithTriggers(
           rule: rule.copyWith(
-            allowStarredContacts:
-                rule.allowStarredContacts || profile.allowStarredContacts,
-            allowRepeatCallers:
-                rule.allowRepeatCallers || profile.allowRepeatCallers,
+            allowStarredContacts: false,
+            allowRepeatCallers: false,
           ),
           triggers: entry.triggers,
         ),
@@ -570,8 +568,8 @@ class AutomationManager with WidgetsBindingObserver {
         timeRepeatDaysMask,
         repeatMode: normalizedMode,
       ),
-      'allowStarredContacts': rule.allowStarredContacts,
-      'allowRepeatCallers': rule.allowRepeatCallers,
+      'allowStarredContacts': false,
+      'allowRepeatCallers': false,
     });
   }
 
@@ -590,8 +588,8 @@ class AutomationManager with WidgetsBindingObserver {
       'lat': latitude,
       'lng': longitude,
       'rad': radius.round(),
-      'allowStarredContacts': rule.allowStarredContacts,
-      'allowRepeatCallers': rule.allowRepeatCallers,
+      'allowStarredContacts': false,
+      'allowRepeatCallers': false,
     });
   }
 
@@ -606,8 +604,8 @@ class AutomationManager with WidgetsBindingObserver {
       'id': rule.id.toString(),
       'name': rule.name,
       'packageName': packageName,
-      'allowStarredContacts': rule.allowStarredContacts,
-      'allowRepeatCallers': rule.allowRepeatCallers,
+      'allowStarredContacts': false,
+      'allowRepeatCallers': false,
     });
   }
 
@@ -623,8 +621,8 @@ class AutomationManager with WidgetsBindingObserver {
       'name': rule.name,
       'activityType': activityType,
       'confidenceThreshold': defaultActivityConfidenceThreshold,
-      'allowStarredContacts': rule.allowStarredContacts,
-      'allowRepeatCallers': rule.allowRepeatCallers,
+      'allowStarredContacts': false,
+      'allowRepeatCallers': false,
     });
   }
 
