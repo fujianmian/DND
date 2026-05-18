@@ -89,7 +89,7 @@ class CalendarTriggerFields extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Quietly caches only busy windows. Event details are not stored.',
+                'Quietly checks meeting times only. Event details are not stored.',
                 style: TextStyle(
                   fontSize: 12,
                   color: AppTheme.pureBlack.withValues(alpha: 0.62),

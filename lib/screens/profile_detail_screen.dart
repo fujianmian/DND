@@ -6,6 +6,7 @@ import '../main.dart';
 import '../models/rule_trigger_summary.dart';
 import '../services/app_catalog.dart';
 import '../theme/app_theme.dart';
+import '../utils/rule_edit_navigation.dart';
 import 'create_rule_wizard.dart';
 import 'multi_trigger_rule_form_screen.dart';
 import 'rule_form_screen.dart';
@@ -97,7 +98,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   }
 
   Future<void> _editRule(RuleWithTriggers entry) async {
-    if (entry.triggers.length > 1) {
+    if (shouldUseMultiConditionEditor(entry)) {
       await Navigator.push(
         context,
         MaterialPageRoute(

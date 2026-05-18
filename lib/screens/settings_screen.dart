@@ -26,6 +26,22 @@ enum SettingsSection {
   savedLocations,
 }
 
+@visibleForTesting
+Future<bool> syncAutomationAfterCalendarBusyWindowRefresh({
+  required CalendarEventSyncResult result,
+  required Future<void> Function() syncRulesToAndroid,
+}) async {
+  if (!result.success) return false;
+
+  debugPrint(
+    'Calendar busy-window refresh completed; syncing automation rules '
+    'for immediate evaluation. cached=${result.insertedCount}, '
+    'skipped=${result.skippedCount}, status=${result.status}',
+  );
+  await syncRulesToAndroid();
+  return true;
+}
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.section});
 
@@ -456,6 +472,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     final result = await CalendarEventSyncService(
       database: database,
     ).syncAllCalendarTriggerBusyWindows();
+    await syncAutomationAfterCalendarBusyWindowRefresh(
+      result: result,
+      syncRulesToAndroid: automationManager.syncRulesToAndroid,
+    );
 
     if (!mounted) return;
     setState(() {
@@ -468,11 +488,15 @@ class _SettingsScreenState extends State<SettingsScreen>
   String _calendarSyncStatusText() {
     final result = _lastCalendarSyncResult;
     if (result == null) {
-      return 'Ready to cache busy windows when Calendar triggers exist.';
+      return 'Ready to update when calendar rules exist.';
     }
     if (result.fetchedAt != null) {
-      return 'Last refreshed ${_formatDateTime(result.fetchedAt!)}. '
-          '${result.insertedCount} cached, ${result.skippedCount} skipped.';
+      final eventText = result.insertedCount == 1
+          ? 'Found 1 event.'
+          : result.insertedCount == 0
+          ? 'No active calendar events found.'
+          : 'Found ${result.insertedCount} events.';
+      return 'Last updated ${_formatDateTime(result.fetchedAt!)}. $eventText';
     }
     return result.message;
   }
@@ -1285,7 +1309,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ListTile(
                 leading: const Icon(Icons.sync, color: AppTheme.logoBlue),
                 title: const Text(
-                  'Busy window cache',
+                  'Update latest calendar',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1314,7 +1338,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text('Refresh'),
+                            : const Text('Update'),
                       )
                     : null,
               ),

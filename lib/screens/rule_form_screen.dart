@@ -480,7 +480,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (!await calendarAuthService.isConnected()) {
       if (mounted) {
         _showSnackBar(
-          'Calendar rule saved. Connect Google Calendar to cache meeting times.',
+          'Calendar rule saved. Connect Google Calendar to update meeting times.',
         );
       }
       return;

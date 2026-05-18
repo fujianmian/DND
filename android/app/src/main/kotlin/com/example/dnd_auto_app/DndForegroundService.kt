@@ -216,6 +216,10 @@ class DndForegroundService : Service() {
         groupedAutomationRules = parseGroupedAutomationRules(automationRulesJson)
         val calendarBusyWindowsJson = ruleIntent?.getStringExtra("calendarBusyWindowsJson")
         calendarBusyWindows = parseCalendarBusyWindows(calendarBusyWindowsJson)
+        android.util.Log.d(
+            "DndCalendar",
+            "Calendar cache refresh/sync received: hasCalendarPayload=${calendarBusyWindowsJson != null}, nativeWindowCount=${calendarBusyWindows.size}, payloadLength=${calendarBusyWindowsJson?.length ?: 0}"
+        )
         val groupedTriggerCount = groupedAutomationRules.sumOf { it.triggers.size }
         android.util.Log.d(
             "DndGroupedRules",
@@ -2088,6 +2092,12 @@ class DndForegroundService : Service() {
             )
 
             if (currentFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
+                if (calendarMatched) {
+                    android.util.Log.d(
+                        "DndCalendar",
+                        "DND state changed because of calendar trigger: enabling automation DND. source=$source, activeRules=$activeRuleNamesText"
+                    )
+                }
                 android.util.Log.d("DndActivity", "DND enabled by automation.")
                 notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
             }
@@ -2117,6 +2127,10 @@ class DndForegroundService : Service() {
             }
 
             if (currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+                android.util.Log.d(
+                    "DndCalendar",
+                    "DND state changed after calendar re-evaluation: disabling automation DND because no rules match. source=$source, calendarMatched=$calendarMatched"
+                )
                 android.util.Log.d(
                     "DndActivity",
                     "DND disabled after grace period: still no matching rules. source=$source, timeMatched=$timeMatched, locationMatched=$locationMatched, appMatched=$appMatched, activityMatched=$activityMatched, calendarMatched=$calendarMatched, currentForegroundPackage=$currentForegroundPackage, lastMatchedApp=$lastMatchedAppPackage, lastMatchedAppAt=$lastMatchedAppAtMillis, isInsideGeofence=$isCurrentlyInsideGeofence, activeGeofenceIds=${activeGeofenceIds.joinToString()}, targetAppPackages=${appTriggerTargetPackages().joinToString()}, currentActivityInt=$currentActivityInt"

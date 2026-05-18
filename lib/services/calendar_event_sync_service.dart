@@ -33,9 +33,11 @@ class CalendarEventSyncResult {
       insertedCount: insertedCount,
       skippedCount: skippedCount,
       fetchedAt: fetchedAt,
-      message: insertedCount == 1
-          ? 'Cached 1 calendar window.'
-          : 'Cached $insertedCount calendar windows.',
+      message: insertedCount == 0
+          ? 'Calendar updated. No active calendar events found.'
+          : insertedCount == 1
+          ? 'Calendar updated. Found 1 event.'
+          : 'Calendar updated. Found $insertedCount events.',
     );
   }
 
@@ -46,7 +48,7 @@ class CalendarEventSyncResult {
       triggerCount: 0,
       insertedCount: 0,
       skippedCount: 0,
-      message: 'No Calendar triggers to sync yet.',
+      message: 'No calendar rules to update yet.',
     );
   }
 
@@ -68,18 +70,19 @@ class CalendarEventSyncResult {
       triggerCount: 0,
       insertedCount: 0,
       skippedCount: 0,
-      message: 'Google Calendar authorization is unavailable.',
+      message:
+          'Could not update calendar. Reconnect Google Calendar and try again.',
     );
   }
 
-  factory CalendarEventSyncResult.failed(String message) {
-    return CalendarEventSyncResult._(
+  factory CalendarEventSyncResult.failed(String _) {
+    return const CalendarEventSyncResult._(
       success: false,
       status: 'failed',
       triggerCount: 0,
       insertedCount: 0,
       skippedCount: 0,
-      message: message,
+      message: 'Could not update calendar. Please try again.',
     );
   }
 
@@ -179,9 +182,7 @@ class CalendarEventSyncService {
         fetchedAt: fetchedAt,
       );
     } catch (_) {
-      return CalendarEventSyncResult.failed(
-        'Calendar events could not be refreshed. Check your connection and try again.',
-      );
+      return CalendarEventSyncResult.failed('');
     } finally {
       client.close();
     }

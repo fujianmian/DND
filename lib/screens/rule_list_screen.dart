@@ -6,6 +6,8 @@ import '../main.dart';
 import '../models/rule_trigger_summary.dart';
 import '../services/app_catalog.dart';
 import '../theme/app_theme.dart';
+import '../utils/rule_edit_navigation.dart';
+import '../widgets/rule_list_empty_state.dart';
 import 'create_rule_wizard.dart';
 import 'multi_trigger_rule_form_screen.dart';
 import 'rule_form_screen.dart';
@@ -45,7 +47,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
           }
 
           final entries = snapshot.data ?? [];
-          if (entries.isEmpty) return _buildEmptyState();
+          if (entries.isEmpty) return _buildEmptyState(bottomSafePadding);
           _primeAppLabels(entries);
 
           return ListView.builder(
@@ -148,7 +150,7 @@ class _RuleListScreenState extends State<RuleListScreen> {
   }
 
   Future<void> _openEditForm(RuleWithTriggers entry) async {
-    if (entry.triggers.length > 1) {
+    if (shouldUseMultiConditionEditor(entry)) {
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -384,28 +386,10 @@ class _RuleListScreenState extends State<RuleListScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.auto_awesome, size: 64, color: AppTheme.logoCyan),
-          const SizedBox(height: 16),
-          const Text(
-            'No standalone rules yet',
-            style: TextStyle(
-              fontSize: 20,
-              color: AppTheme.pureBlack,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Create a rule here, or use Profiles for scenario-based rule groups.',
-            style: TextStyle(color: AppTheme.pureBlack.withValues(alpha: 0.6)),
-          ),
-        ],
-      ),
+  Widget _buildEmptyState(double bottomSafePadding) {
+    return RuleListEmptyState(
+      bottomSafePadding: bottomSafePadding,
+      onCreateRule: _openCreateWizard,
     );
   }
 }
