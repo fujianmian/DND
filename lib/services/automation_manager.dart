@@ -208,18 +208,23 @@ class AutomationManager with WidgetsBindingObserver {
       final enabledTriggers = entry.triggers
           .where((trigger) => trigger.enabled)
           .toList(growable: false);
+      final isAllMatchMultiTriggerRule =
+          rule.matchType == 1 && enabledTriggers.length > 1;
       enabledTriggerCount += enabledTriggers.length;
 
-      if (enabledTriggers.length > 1) {
-        // Keep flat native entries available for fallback compatibility.
+      if (enabledTriggers.length > 1 && !isAllMatchMultiTriggerRule) {
+        // Keep flat native entries available for fallback compatibility when
+        // the flattened behavior still matches the rule's semantics.
         flattenedMultiTriggerRuleCount += 1;
       }
 
       final groupedTriggers = <Map<String, dynamic>>[];
+      var invalidGroupedTriggerCountForRule = 0;
       for (final trigger in enabledTriggers) {
         final groupedTrigger = _groupedTriggerPayload(rule, trigger);
         if (groupedTrigger == null) {
           skippedInvalidGroupedTriggerCount += 1;
+          invalidGroupedTriggerCountForRule += 1;
           continue;
         }
         groupedTriggers.add(groupedTrigger);
@@ -228,6 +233,12 @@ class AutomationManager with WidgetsBindingObserver {
       if (entry.triggers.isNotEmpty && groupedTriggers.isEmpty) {
         debugPrint(
           "Automation grouped payload skipped rule ${rule.id} (${rule.name}): no valid enabled triggers.",
+        );
+      } else if (isAllMatchMultiTriggerRule &&
+          invalidGroupedTriggerCountForRule > 0) {
+        debugPrint(
+          "Automation grouped payload skipped ALL rule ${rule.id} (${rule.name}): "
+          "$invalidGroupedTriggerCountForRule enabled trigger(s) were invalid.",
         );
       } else if (groupedTriggers.isNotEmpty) {
         groupedTriggerCount += groupedTriggers.length;
@@ -258,14 +269,21 @@ class AutomationManager with WidgetsBindingObserver {
         continue;
       }
 
-      for (final trigger in enabledTriggers) {
-        _addTriggerToPayload(
-          rule,
-          trigger,
-          timeRulesMap,
-          locRulesMap,
-          appRulesMap,
-          activityRulesMap,
+      if (!isAllMatchMultiTriggerRule) {
+        for (final trigger in enabledTriggers) {
+          _addTriggerToPayload(
+            rule,
+            trigger,
+            timeRulesMap,
+            locRulesMap,
+            appRulesMap,
+            activityRulesMap,
+          );
+        }
+      } else {
+        debugPrint(
+          "Automation sync grouped-only: ALL rule ${rule.id} (${rule.name}) "
+          "was not sent as flat fallback entries.",
         );
       }
     }

@@ -645,18 +645,91 @@ void main() {
     },
   );
 
+  test('keeps three-condition ALL rule out of flat fallback payload', () async {
+    final ruleId = await database.createRuleWithTriggers(
+      rule: withFirstTriggerLegacyFields(
+        RulesCompanion.insert(
+          name: 'All Saved',
+          type: 0,
+          matchType: const d.Value(1),
+          startTime: const d.Value('09:00'),
+          endTime: const d.Value('17:00'),
+          allowStarredContacts: const d.Value(true),
+        ),
+        const RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '09:00',
+          endTime: '17:00',
+        ),
+      ),
+      triggers: const [
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.time,
+          startTime: '09:00',
+          endTime: '17:00',
+        ),
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.app,
+          packageName: 'com.example.all',
+        ),
+        RuleTriggerDraft(
+          triggerType: RuleTriggerDraft.activity,
+          activityType: 'WALKING',
+        ),
+      ].map((draft) => draft.toCompanion()).toList(),
+    );
+
+    final payload = automationManager.buildSyncPayloadFromRuleTriggers(
+      await database.getEnabledRulesWithTriggers(),
+    );
+
+    expect(payload.flattenedMultiTriggerRuleCount, 0);
+    expect(payload.timeRules, isEmpty);
+    expect(payload.appRules, isEmpty);
+    expect(payload.activityRules, isEmpty);
+    expect(payload.groupedRuleCount, 1);
+    expect(payload.groupedTriggerCount, 3);
+    expect(payload.skippedInvalidGroupedTriggerCount, 0);
+
+    final groupedRules = jsonDecode(payload.automationRulesJson) as List;
+    final groupedRule = groupedRules.single as Map<String, dynamic>;
+    expect(groupedRule['id'], ruleId.toString());
+    expect(groupedRule['name'], 'All Saved');
+    expect(groupedRule['matchType'], 1);
+    expect(groupedRule['priority'], 70);
+    expect(groupedRule['allowStarredContacts'], isFalse);
+
+    final triggers = groupedRule['triggers'] as List;
+    expect(triggers, hasLength(3));
+    expect(
+      triggers.map((trigger) => (trigger as Map)['triggerType']),
+      containsAll([0, 2, 3]),
+    );
+    expect(
+      triggers.where(
+        (trigger) => (trigger as Map)['packageName'] == 'com.example.all',
+      ),
+      hasLength(1),
+    );
+    expect(
+      triggers.where(
+        (trigger) => (trigger as Map)['activityType'] == 'WALKING',
+      ),
+      hasLength(1),
+    );
+  });
+
   test(
-    'flattens three-condition ALL rule without enforcing matchType',
+    'does not partially sync invalid ALL rule as grouped or flat fallback',
     () async {
-      final ruleId = await database.createRuleWithTriggers(
+      await database.createRuleWithTriggers(
         rule: withFirstTriggerLegacyFields(
           RulesCompanion.insert(
-            name: 'All Saved',
+            name: 'Invalid All',
             type: 0,
             matchType: const d.Value(1),
             startTime: const d.Value('09:00'),
             endTime: const d.Value('17:00'),
-            allowStarredContacts: const d.Value(true),
           ),
           const RuleTriggerDraft(
             triggerType: RuleTriggerDraft.time,
@@ -664,70 +737,27 @@ void main() {
             endTime: '17:00',
           ),
         ),
-        triggers: const [
-          RuleTriggerDraft(
+        triggers: [
+          const RuleTriggerDraft(
             triggerType: RuleTriggerDraft.time,
             startTime: '09:00',
             endTime: '17:00',
-          ),
-          RuleTriggerDraft(
-            triggerType: RuleTriggerDraft.app,
-            packageName: 'com.example.all',
-          ),
-          RuleTriggerDraft(
-            triggerType: RuleTriggerDraft.activity,
-            activityType: 'WALKING',
-          ),
-        ].map((draft) => draft.toCompanion()).toList(),
+          ).toCompanion(),
+          RuleTriggersCompanion.insert(ruleId: 0, triggerType: 2),
+        ],
       );
 
       final payload = automationManager.buildSyncPayloadFromRuleTriggers(
         await database.getEnabledRulesWithTriggers(),
       );
 
-      expect(payload.flattenedMultiTriggerRuleCount, 1);
-      expect(payload.timeRules, hasLength(1));
-      expect(payload.appRules, hasLength(1));
-      expect(payload.activityRules, hasLength(1));
-      expect(payload.groupedRuleCount, 1);
-      expect(payload.groupedTriggerCount, 3);
-      expect(payload.skippedInvalidGroupedTriggerCount, 0);
-      for (final entry in [
-        payload.timeRules.single,
-        payload.appRules.single,
-        payload.activityRules.single,
-      ]) {
-        expect(entry['id'], ruleId.toString());
-        expect(entry['name'], 'All Saved');
-        expect(entry['allowStarredContacts'], isFalse);
-      }
-
-      final groupedRules = jsonDecode(payload.automationRulesJson) as List;
-      final groupedRule = groupedRules.single as Map<String, dynamic>;
-      expect(groupedRule['id'], ruleId.toString());
-      expect(groupedRule['name'], 'All Saved');
-      expect(groupedRule['matchType'], 1);
-      expect(groupedRule['priority'], 70);
-      expect(groupedRule['allowStarredContacts'], isFalse);
-
-      final triggers = groupedRule['triggers'] as List;
-      expect(triggers, hasLength(3));
-      expect(
-        triggers.map((trigger) => (trigger as Map)['triggerType']),
-        containsAll([0, 2, 3]),
-      );
-      expect(
-        triggers.where(
-          (trigger) => (trigger as Map)['packageName'] == 'com.example.all',
-        ),
-        hasLength(1),
-      );
-      expect(
-        triggers.where(
-          (trigger) => (trigger as Map)['activityType'] == 'WALKING',
-        ),
-        hasLength(1),
-      );
+      expect(payload.flattenedMultiTriggerRuleCount, 0);
+      expect(payload.timeRules, isEmpty);
+      expect(payload.appRules, isEmpty);
+      expect(payload.groupedRuleCount, 0);
+      expect(payload.groupedTriggerCount, 0);
+      expect(payload.skippedInvalidGroupedTriggerCount, 1);
+      expect(jsonDecode(payload.automationRulesJson), isEmpty);
     },
   );
 

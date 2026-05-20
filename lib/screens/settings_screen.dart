@@ -1202,7 +1202,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     required String description,
     required bool granted,
     required VoidCallback onPressed,
-    String actionLabel = 'Open',
+    String actionLabel = 'Grant',
   }) {
     return ListTile(
       leading: Icon(
@@ -1628,7 +1628,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
         trailing: TextButton(
           onPressed: _openNotificationAccessSettings,
-          child: const Text('Open'),
+          child: const Text('Grant'),
         ),
       ),
     );

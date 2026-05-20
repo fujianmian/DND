@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' as d;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -208,7 +210,7 @@ void main() {
   );
 
   test(
-    'multi-trigger rules are flattened without enforcing matchType',
+    'ALL multi-trigger rules are not flattened into fallback payload',
     () async {
       final ruleId = await database.createSingleTriggerRule(
         RulesCompanion.insert(
@@ -233,11 +235,16 @@ void main() {
         await database.getEnabledRulesWithTriggers(),
       );
 
-      expect(payload.flattenedMultiTriggerRuleCount, 1);
-      expect(payload.timeRules, hasLength(1));
-      expect(payload.appRules, hasLength(1));
-      expect(payload.timeRules.single['id'], ruleId.toString());
-      expect(payload.appRules.single['id'], ruleId.toString());
+      expect(payload.flattenedMultiTriggerRuleCount, 0);
+      expect(payload.timeRules, isEmpty);
+      expect(payload.appRules, isEmpty);
+
+      final groupedRules = jsonDecode(payload.automationRulesJson) as List;
+      expect(groupedRules, hasLength(1));
+      expect(
+        (groupedRules.single as Map<String, dynamic>)['id'],
+        ruleId.toString(),
+      );
     },
   );
 }
